@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Robert Coven</title>
+    <link rel="stylesheet" href="./simple-grid.css">
+    <link rel="stylesheet" href="./style.css">
+    <link rel="icon" href="./favicon.ico" type="image/x-icon">
+  </head>
+  <body>
+    <div class="container">
+        <div class="nav row">
+            <div class="col-8 h-name">
+                <a class="nav-items" href="./index.html">Robert E. Coven</a>
+            </div>
+
+            <div class="col-9-12 flex-nav">
+                <div><a class="nav-links" href="index.html#work-section">Work</a></div>
+                <div><a class="nav-links" href="about.html">About</a></div>
+                <div><a class="nav-links" href="mailto:Robcoven@gmail.com">Contact</a></div>
+                <div><a class="nav-links" href="play.html">Play</a></div>
+            </div>
+            <div class="ham-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+
+        <div class="mobile-menu">
+            <div class="ham-display">
+                <div class="ham-links">
+                    <a class="nav-links mobile-hc" href="index.html#work-section">Work</a>
+                    <a class="nav-links mobile-hc" href="about.html">About</a>
+                    <a class="nav-links mobile-hc" href="mailto:Robcoven@gmail.com">Contact</a>
+                    <a class="nav-links mobile-hc" href="play.html">Play</a>
+                </div>
+
+
+            </div>
+
+            <div class="ham-footer">
+                <div class="container-left">
+                    <a class="mobile-label mobile-hc">R.E.C</a>
+                </div>
+                <div class="container-right">
+                    <span class="mobile-label">Enquiries</span>
+                    <a class="label-text opac-5" href="mailto:Robcoven@gmail.com">Robcoven@gmail.com</a> 
+                </div>
+            </div>
+        </div>
+
+        <div class="mpc-about row">
+            <div class="col-2">
+                <span class="label-text">REC-303</span>
+            </div>
+            <div class="col-6">
+                <p class="about-text">All sounds designed by Rob Coven</p>
+            </div>
+        </div>
+        <div class="row mpc-row">
+            <div class="col-12 mpc-container">
+                    <div class="mpc-left">
+                        <div class="mpc-display">
+                            <span class="label-text" id="fileName">Click a Pad</span>
+                            <span class="label-text" id="value">00</span>
+                        </div>
+                        <div class="mpc-leftcontent">
+                            <img class="mpc-speaker" src="./speaker.svg" alt="">
+                            <img class= "mpc-logo" src="./rec.svg" alt="">
+                            <div class="mpc-slider">
+                                <span class="mpc-fader-text">000</span>
+                                <div class="mpc-divider">
+                                    <input type="range" id="volumeSlider" min="0" max="100" value="50" class="mpc-fader">
+                                </div>
+
+                                <span class="mpc-fader-text">100</span>
+
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mpc-right">
+                        <div class="pad m-pad" value="01"></div>
+                        <div class="pad m-pad" value="02"></div>
+                        <div class="pad m-pad" value="03"></div>
+                        <div class="pad m-pad" value="04"></div>
+                        <div class="pad m-pad" value="05"></div>
+                        <div class="pad m-pad" value="06"></div>
+                        <div class="pad m-pad" value="07"></div>
+                        <div class="pad m-pad" value="08"></div>
+                        <div class="pad m-pad" value="09"></div>
+                        <div class="pad p-desktop" value="10"></div>
+                        <div class="pad p-desktop" value="11"></div>
+                        <div class="pad p-desktop" value="12"></div>
+                    </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <hr class="footer-divider">
+            </div>
+        </div>
+        <div class="row mobile-name">
+            <div class="col-12">
+                <a class="label-text" href="index.html">R.E.C</a>
+            </div>
+        </div>
+        <div class="row footer-links">
+            <div class="col-6">
+                <a class="label-text" href="index.html#work-section">Work</a>
+                <a class="label-text opac-5" href="about.html">About</a>  
+            </div>
+            <div class="col-6">
+                <span class="label-text">Enquiries</span>
+                <a class="label-text opac-5" href="mailto:Robcoven@gmail.com">Robcoven@gmail.com</a>
+            </div>
+        </div>
+        <div class="row footer">
+            <div class="col-4">
+                <a class="label-text footer-name" href="index.html">R.E.C</a>
+            </div>
+            <div class="col-2">
+                <a class="f-label" href="index.html#work-section">Work</a>
+                <a class="label-text opac-5" href="about.html">About</a>
+            </div>
+            <div class="col-2">
+                <span class="f-label">Enquiries</span>
+                <a class="label-text opac-5" href="mailto:Robcoven@gmail.com">Robcoven@gmail.com</a>
+            </div>
+            <div class="col-2">
+                <span class="f-label">Cleveland, OH</span>
+                <span class="label-text opac-5" id="live-time">Add Time</span>
+            </div>
+            <div class="col-2">
+                <a class="label-text" href="play.html">Play</a>
+            </div>
+
+        </div>            
+    </div>
+	<script src="index.js"></script>
+  </body>
+</html>

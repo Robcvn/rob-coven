@@ -1,0 +1,294 @@
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-size: 100%;
+	font: inherit;
+	vertical-align: baseline;
+}
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure, 
+footer, header, hgroup, menu, nav, section {
+	display: block;
+}
+body {
+	line-height: 1;
+}
+ol, ul {
+	list-style: none;
+}
+blockquote, q {
+	quotes: none;
+}
+blockquote:before, blockquote:after,
+q:before, q:after {
+	content: '';
+	content: none;
+}
+table {
+	border-collapse: collapse;
+	border-spacing: 0;
+}
+
+/*End of Reset*/
+
+@font-face {
+    font-family: "ApercuMonoProRegular";
+    src: url(ApercuMonoProRegular.ttf);
+  }
+
+body {
+    background-color: #131313;
+}
+
+.nav-row {
+    margin-bottom: 238px;
+}
+
+.nav {
+    width: 100%;
+}
+
+a {
+    text-decoration: none;
+}
+
+a:visited {
+    color: #FFFF;
+}
+
+li {
+    list-style-type: none;
+}
+
+.nav-items {
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+}
+
+.nav-links {
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+}
+
+.label-text {
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+    font-size: 12px;
+    display: block;
+}
+
+.footer .label-text {
+    margin-bottom: 8px;
+}
+
+.about {
+    margin-top: 400px;
+    margin-bottom: 250px;
+}
+
+.about-text {
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+    font-size: 20px;
+    max-width: 688px;
+    line-height: 150%;
+    margin-bottom: 48px;
+    letter-spacing: -0.5px;
+}
+
+
+.rm-btn {
+    background-color: #131313;
+    border: 1px solid rgb(255,255,255,0.2);
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+    padding: 14px 20px;
+    
+}
+
+.rm-btn:hover {
+    background: limegreen;
+    color: #131313;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+a:hover {
+    color: limegreen;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.divider {
+    margin: 80px 0px;
+    border: 1px solid rgb(255,255,255,0.2);
+}
+
+.section-label {
+    font-family: "ApercuMonoProRegular";
+    color: rgb(255,255,255,0.5);
+}
+
+.project.row {
+    font-family: "ApercuMonoProRegular";
+    color: #FFFF;
+    font-size: 12px;
+    line-height: 130%;
+
+}
+
+
+.last-project {
+    margin-bottom: 200px;
+}
+.opac-5 {
+    opacity: .5;
+
+}
+
+.project-section:not(:last-child) {
+    border-bottom: 1px solid rgb(255,255,255,0.2);
+    padding-bottom: 32px;
+}
+
+.project-section:not(:first-child) {
+    padding-top: 16px;
+}
+
+.project-section .col-5 {
+    margin-left: 0;
+}
+
+.project-img {
+    width: 100%;
+}
+
+
+.footer-divider {
+    border: 1px solid rgb(255,255,255,0.2);
+}
+
+.footer {
+    padding-bottom: 32px;
+    padding-top: 32px;
+}
+
+.mpc-container {
+    display: flex;
+    flex-direction: row;
+    border: 1px solid rgb(255,255,255,0.2);
+}
+
+.mpc-display {
+    border: 1px solid rgb(255,255,255,0.2);
+    padding-bottom: 106px;
+    margin: 16px 0px 0px 16px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 10px;
+    height: 16%;
+}
+
+.mpc-left {
+    display: flex;
+    flex-direction: column;
+    width: 34%;
+
+}
+
+.mpc-leftcontent {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+    padding: 13% 0;
+}
+
+.mpc-speaker {
+    width: 50%;
+}
+
+.mpc-logo {
+    width: 54%;
+}
+
+.mpc-right {
+    display: flex;
+    flex-flow: row wrap;
+    width: 66%;
+    margin: 8px;
+}
+
+
+.pad {
+    border: 1px solid rgb(255,255,255,0.2);
+    flex: 1 0 21%;
+    width: 50%;
+    margin: 8px;
+}
+
+.pad:after {
+    content: "";
+    display: block;
+    padding-bottom: 100%;
+}
+
+.pad:hover {
+    background-color: rgb(255,255,255,0.2);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.pad:focus {
+    background-color: rgb(0, 255, 0, 0.2);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.mpc-slider {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    position: relative;
+}
+
+.mpc-slider .label-text:first-child {
+    padding-left: 16px;
+}
+
+.mpc-divider {
+    border: 1px solid rgb(255,255,255,0.2);
+    width: 100%;
+    margin: 6px 16px;
+    height: 0;
+}
+
+.mpc-fader {
+    border: 1px solid rgb(255,255,255,0.2);
+    width: 16px;
+    height: 40px;
+    position: absolute;
+    left: 50%;
+    top: -14px;
+    background-color: #131313;
+}
+
+.mpc-row {
+    margin-bottom: 200px;
+}
+
