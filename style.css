@@ -657,6 +657,12 @@ body.nav-open {
         margin: 8px;
     }
 
+    .pad-active {
+        background-color: rgb(255,255,255,0.2);
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }    
+
     .mpc-container {
         flex-direction: column-reverse;
         align-items: center;

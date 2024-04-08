@@ -18,18 +18,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Mapping of pad values to sound file names
     const soundMap = {
-        '01': 'big-kick.wav',
-        '02': 'dnb-snare.wav',
-        '03': 'SOUL - Snare 1.wav',
-        '04': 'SOUL - CL 1.wav',
-        '05': 'chord-stab-dshrp.mp3',
-        '06': '',
-        '07': 'sound7.wav',
-        '08': 'sound8.wav',
-        '09': 'sound9.wav',
-        '10': 'sound10.wav',
-        '11': 'sound11.wav',
-        '12': 'sound12.wav'
+        '01': 'Kick-1.wav',
+        '02': 'Kick-2.wav',
+        '03': 'Snare-4.wav',
+        '04': 'Snare-3.wav',
+        '05': 'CHH-1.wav',
+        '06': 'CHH-2.wav',
+        '07': 'CHH-3.wav',
+        '08': 'Perc-1.wav',
+        '09': 'Perc-2.wav',
+        '10': 'Cym-1.wav',
+        '11': '808-dshrp.wav',
+        '12': '808-dshrp-oct.wav'
     };
 
     // Select all pads
