@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Spritzi</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div class="main-container">
+        <div class="nav">
+            <div class="ham-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+            <div class="nav-links-container">
+                <a href="#" class="nav-links">Shop</a>
+                <a href="#" class="nav-links">Find Us</a>
+                <a href="#" class="nav-links">Contact</a>
+            </div>
+            <div class="logo-container">
+                <img src="Spritzi.png" class="logo" alt="">
+            </div>
+            <div class="nav-icon-container">
+                <a href="#"><img src="User.png" class="nav-icon" alt=""></a>
+                <a href="#"><img src="ShoppingBag.png" class="nav-icon" alt=""></a>
+            </div>
+        </div>
+        <div class="mobile-menu">
+            <div class="ham-display">
+                <div class="ham-links">
+                    <a href="#" class="mobile-links">Shop</a>
+                    <a href="#" class="mobile-links">Find Us</a>
+                    <a href="#" class="mobile-links">Contact</a>
+                </div>
+            </div>
+        </div>
+        <div class="main-wrapper">
+            <div class="left-container">
+                <p class="left-header-text">A Refreshingly New Brew.</p>
+                <p class="desc-text">Etiam eu turpis molestie, dictum est a, mattis tellus. Sed dignissim, metus nec fringilla accumsan, risus sem.</p>
+                <button class="shop-btn">Shop All Products</button> 
+            </div>
+            <div class="badge-wrapper">
+                <img src="Layer_1.png" alt="" class="badge">
+            </div>
+            <div class="right-container straw-bg">
+                <div class="img-container">
+                    <img value='1' class='can active-can' src="straw-b.png" alt="">
+                    <img value='2' class='can' src="og.png" alt="">
+                    <img value='3' class='can' src="grape-f.png" alt="">
+                </div>
+                <div class="btn-container">
+                    <button value='1' class="pag-btn active-btn" onclick="activeBtn(event);canSwap(event);changeBackground(event);"></button>
+                    <button value='2' class="pag-btn" onclick="activeBtn(event);canSwap(event);changeBackground(event);"></button>
+                    <button value='3' class="pag-btn" onclick="activeBtn(event);canSwap(event);changeBackground(event);"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+	<script src="index.js"></script>
+  </body>
+</html>
