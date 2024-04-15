@@ -49,6 +49,7 @@ html, body {
     width: 100%;
 }
 
+
 @font-face {
     font-family: Funkis;
     src: url(Funkis-Medium.otf);
@@ -335,6 +336,10 @@ button {
 }
 
 @media screen and (max-width: 870px) {
+
+     body {
+	overflow-x: hidden;
+     }
 
     .main-container {
         height: auto;
