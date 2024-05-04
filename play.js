@@ -1,22 +1,9 @@
 document.addEventListener('DOMContentLoaded', function() {
-    // Get the volume slider
     const volumeSlider = document.getElementById('volumeSlider');
-    // Set currentVolume based on fader's initial position
-    let sounds = {};  
     let currentVolume = volumeSlider.value / 100;
+    let sounds = {};
 
-    
-    function updateVolume() {
-        currentVolume = volumeSlider.value / 100; 
-        Object.values(sounds).forEach(audio => {
-            audio.volume = currentVolume;
-        });
-    }
-
-    // Listen for changes on the volume slider
-    volumeSlider.addEventListener('input', updateVolume);
-
-    // Mapping of pad values to sound file names
+    // Preload all sounds
     const soundMap = {
         '01': 'Kick-1.wav',
         '02': 'Kick-2.wav',
@@ -32,37 +19,34 @@ document.addEventListener('DOMContentLoaded', function() {
         '12': '808-dshrp-oct.wav'
     };
 
-    // Select all pads
-    const pads = document.querySelectorAll('.pad');
+    Object.keys(soundMap).forEach(padValue => {
+        sounds[padValue] = new Audio(soundMap[padValue]);
+    });
 
+    function updateVolume() {
+        currentVolume = volumeSlider.value / 100;
+        Object.values(sounds).forEach(audio => {
+            audio.volume = currentVolume;
+        });
+    }
+
+    volumeSlider.addEventListener('input', updateVolume);
+
+    const pads = document.querySelectorAll('.pad');
     pads.forEach(pad => {
         pad.addEventListener('click', function() {
             const padValue = this.getAttribute('value');
-            const soundFile = soundMap[padValue]; 
-
-            if (soundFile) {
-                // Check if the Audio object exists
-                if (!sounds[padValue]) {
-                    sounds[padValue] = new Audio(soundFile);
-                }
-
-                // Set the sound's volume to currentVolume before playing
+            if (sounds[padValue]) {
                 sounds[padValue].volume = currentVolume;
-                
-                // Play sound
-                sounds[padValue].currentTime = 0; // Rewind to the start
+                sounds[padValue].currentTime = 0;
                 sounds[padValue].play();
-
-                // Update display
-                document.getElementById('fileName').innerText = soundFile;
+                document.getElementById('fileName').innerText = soundMap[padValue];
                 document.getElementById('value').innerText = padValue;
             }
         });
     });
 
-  
     updateVolume();
-
 
     const keyMap = {
         'KeyA': '01', 
@@ -79,29 +63,14 @@ document.addEventListener('DOMContentLoaded', function() {
         'KeyC': '12'
     };
 
-    // Listen for key presses
     document.addEventListener('keydown', function(event) {
-         // Get the pad value based on the pressed key
         const padValue = keyMap[event.code];
-        if (padValue) {
-            // Get the sound file from the existing soundMap
-            const soundFile = soundMap[padValue]; 
-
-            if (soundFile) {
-                // Check if Audio object already exists
-                if (!sounds[padValue]) {
-                    sounds[padValue] = new Audio(soundFile);
-                }
-
-                // Set volume and play sound
-                sounds[padValue].volume = currentVolume;
-                sounds[padValue].currentTime = 0; // Rewind to the start
-                sounds[padValue].play();
-
-                // Update display
-                document.getElementById('fileName').innerText = soundFile;
-                document.getElementById('value').innerText = padValue;
-            }
+        if (padValue && sounds[padValue]) {
+            sounds[padValue].volume = currentVolume;
+            sounds[padValue].currentTime = 0;
+            sounds[padValue].play();
+            document.getElementById('fileName').innerText = soundMap[padValue];
+            document.getElementById('value').innerText = padValue;
         }
     });
 
@@ -119,7 +88,6 @@ document.addEventListener('DOMContentLoaded', function() {
         body.classList.toggle('nav-open');
     }
 
-    // Add event listener for ham-menu
     document.querySelector('.ham-menu').addEventListener('click', toggleMenu);
 
     function updateTime() {
@@ -128,20 +96,14 @@ document.addEventListener('DOMContentLoaded', function() {
         var minutes = currentTime.getMinutes();
         var seconds = currentTime.getSeconds();
         
-        // Format
         minutes = (minutes < 10 ? "0" : "") + minutes;
         seconds = (seconds < 10 ? "0" : "") + seconds;
-
-        // Format time in 12-hour format with AM/PM
         var ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
-        hours = hours ? hours : 12; // 0 should be displayed as 12
+        hours = hours ? hours : 12;
         var timeString = hours + ":" + minutes + ":" + seconds + " " + ampm + " EST";
 
-        // Display the time
         document.getElementById("live-time").innerText = timeString;
-
-        // Update time per second
         setTimeout(updateTime, 1000);
     }
 
