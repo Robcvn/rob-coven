@@ -1,9 +1,14 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioContext = new AudioContext();
+    
     const volumeSlider = document.getElementById('volumeSlider');
     let currentVolume = volumeSlider.value / 100;
-    let sounds = {};
-
-    // Preload all sounds
+    let gainNode = audioContext.createGain();
+    gainNode.gain.value = currentVolume;
+    gainNode.connect(audioContext.destination);
+    
+    const buffers = {};
     const soundMap = {
         '01': 'Kick-1.wav',
         '02': 'Kick-2.wav',
@@ -18,36 +23,64 @@ document.addEventListener('DOMContentLoaded', function() {
         '11': '808-dshrp.wav',
         '12': '808-dshrp-oct.wav'
     };
-
-    Object.keys(soundMap).forEach(padValue => {
-        sounds[padValue] = new Audio(soundMap[padValue]);
-    });
-
-    function updateVolume() {
-        currentVolume = volumeSlider.value / 100;
-        Object.values(sounds).forEach(audio => {
-            audio.volume = currentVolume;
-        });
+    
+    function resumeAudioContext() {
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
     }
-
-    volumeSlider.addEventListener('input', updateVolume);
-
-    const pads = document.querySelectorAll('.pad');
-    pads.forEach(pad => {
-        pad.addEventListener('click', function() {
-            const padValue = this.getAttribute('value');
-            if (sounds[padValue]) {
-                sounds[padValue].volume = currentVolume;
-                sounds[padValue].currentTime = 0;
-                sounds[padValue].play();
-                document.getElementById('fileName').innerText = soundMap[padValue];
-                document.getElementById('value').innerText = padValue;
+    
+    async function loadSounds() {
+        const loadPromises = Object.entries(soundMap).map(async ([padValue, fileName]) => {
+            try {
+                const response = await fetch(fileName);
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                buffers[padValue] = audioBuffer;
+            } catch (error) {
+                console.error(`Error loading sound ${fileName}:`, error);
             }
         });
+        
+        await Promise.all(loadPromises);
+    }
+    
+    function playSound(padValue) {
+        resumeAudioContext();
+        
+        if (buffers[padValue]) {
+            const source = audioContext.createBufferSource();
+            source.buffer = buffers[padValue];
+            source.connect(gainNode);
+            source.start(0);
+            
+            document.getElementById('fileName').innerText = soundMap[padValue];
+            document.getElementById('value').innerText = padValue;
+        }
+    }
+    
+    function updateVolume() {
+        currentVolume = volumeSlider.value / 100;
+        gainNode.gain.value = currentVolume;
+    }
+    
+    volumeSlider.addEventListener('input', updateVolume);
+    
+    const pads = document.querySelectorAll('.pad');
+    pads.forEach(pad => {
+        ['touchstart', 'click'].forEach(eventType => {
+            pad.addEventListener(eventType, function(e) {
+                if (eventType === 'touchstart') {
+                    e.preventDefault();
+                }
+                
+                resumeAudioContext();
+                const padValue = this.getAttribute('value');
+                playSound(padValue);
+            }, { passive: false });
+        });
     });
-
-    updateVolume();
-
+    
     const keyMap = {
         'KeyA': '01', 
         'KeyS': '02', 
@@ -62,34 +95,31 @@ document.addEventListener('DOMContentLoaded', function() {
         'KeyX': '11',
         'KeyC': '12'
     };
-
+    
     document.addEventListener('keydown', function(event) {
         const padValue = keyMap[event.code];
-        if (padValue && sounds[padValue]) {
-            sounds[padValue].volume = currentVolume;
-            sounds[padValue].currentTime = 0;
-            sounds[padValue].play();
-            document.getElementById('fileName').innerText = soundMap[padValue];
-            document.getElementById('value').innerText = padValue;
+        if (padValue) {
+            resumeAudioContext();
+            playSound(padValue);
         }
     });
-
+    
     function toggleMenu() {
         var hamMenu = document.querySelector('.ham-menu');
         var hamDisplay = document.querySelector('.ham-display');
         var hamFooter = document.querySelector('.ham-footer');
         var mobileMenu = document.querySelector('.mobile-menu');
         var body = document.body;
-
+        
         hamMenu.classList.toggle('active');
         hamDisplay.classList.toggle('active');
         hamFooter.classList.toggle('active');
         mobileMenu.classList.toggle('active');
         body.classList.toggle('nav-open');
     }
-
+    
     document.querySelector('.ham-menu').addEventListener('click', toggleMenu);
-
+    
     function updateTime() {
         var currentTime = new Date();
         var hours = currentTime.getHours();
@@ -102,10 +132,10 @@ document.addEventListener('DOMContentLoaded', function() {
         hours = hours % 12;
         hours = hours ? hours : 12;
         var timeString = hours + ":" + minutes + ":" + seconds + " " + ampm + " EST";
-
         document.getElementById("live-time").innerText = timeString;
         setTimeout(updateTime, 1000);
     }
-
+    
+    loadSounds();
     updateTime();
 });
