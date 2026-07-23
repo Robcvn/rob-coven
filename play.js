@@ -121,19 +121,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('.ham-menu').addEventListener('click', toggleMenu);
     
     function updateTime() {
-        var currentTime = new Date();
-        var hours = currentTime.getHours();
-        var minutes = currentTime.getMinutes();
-        var seconds = currentTime.getSeconds();
-        
-        minutes = (minutes < 10 ? "0" : "") + minutes;
-        seconds = (seconds < 10 ? "0" : "") + seconds;
-        var ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12;
-        hours = hours ? hours : 12;
-        var timeString = hours + ":" + minutes + ":" + seconds + " " + ampm + " EST";
+        // Cleveland local time (America/New_York), 12-hour format e.g. "4:32 PM ET"
+        var timeString = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).format(new Date()) + ' ET';
         document.getElementById("live-time").innerText = timeString;
-        setTimeout(updateTime, 1000);
+        setTimeout(updateTime, 30000);
     }
     
     loadSounds();

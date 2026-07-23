@@ -18,26 +18,19 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('.ham-menu').addEventListener('click', toggleMenu);
 
     function updateTime() {
-        var currentTime = new Date();
-        var hours = currentTime.getHours();
-        var minutes = currentTime.getMinutes();
-        var seconds = currentTime.getSeconds();
-        
-        // Format
-        minutes = (minutes < 10 ? "0" : "") + minutes;
-        seconds = (seconds < 10 ? "0" : "") + seconds;
-
-        // Format time in 12-hour format with AM/PM
-        var ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12;
-        hours = hours ? hours : 12; // 0 should be displayed as 12
-        var timeString = hours + ":" + minutes + ":" + seconds + " " + ampm + " EST";
+        // Cleveland local time (America/New_York), 12-hour format e.g. "4:32 PM ET"
+        var timeString = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).format(new Date()) + ' ET';
 
         // Display the time
         document.getElementById("live-time").innerText = timeString;
 
-        // Update time per second
-        setTimeout(updateTime, 1000);
+        // Refresh every 30 seconds
+        setTimeout(updateTime, 30000);
     }
 
     updateTime();
