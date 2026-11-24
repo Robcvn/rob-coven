@@ -55,8 +55,23 @@ body {
 }
 
 
+/* The 16px gap above the nav moves from the container into the nav,
+   so the bar keeps the same spacing when it sticks to the top. */
+.container {
+    margin-top: 0;
+}
+
 .nav {
     width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    padding-top: 16px;
+    background-color: #131313;
+}
+
+#work-section {
+    scroll-margin-top: 64px;
 }
 
 a {
@@ -561,10 +576,6 @@ body.nav-open {
 
     .nav-row, .col-9-12 {
         display: none;
-    }
-
-    .nav.row {
-        position: static !important;
     }
 
     .ham-menu {
