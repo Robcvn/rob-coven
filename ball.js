@@ -1660,6 +1660,128 @@
         buttons[i].addEventListener('click', onPress);
     }
 
+    // ---------- Ink on the dot ----------
+
+    // With a mouse, hovering the dot in the desktop nav spills a blob of ink that inverts
+    // everything under it. Its edge is a few slow waves around a circle, so it is never round,
+    // never jagged, and keeps moving gently while the pointer stays.
+    var INK_SIZE = 220;            // px across when fully spread
+    var INK_SPREAD_MS = 900;
+    var INK_RETREAT_MS = 350;
+    var INK_POINTS = 48;
+    // Waves around the edge: [waves per turn, share of the radius, radians per second, phase].
+    var INK_WAVES = [[2, 0.08, 0.42, 0.3], [3, 0.055, -0.31, 1.9], [4, 0.035, 0.55, 4.1], [5, 0.02, -0.67, 2.6]];
+    var INK_DRIFT = 3;             // px the whole shape wanders
+    var INK_BOX = INK_SIZE * 1.5;  // drawing area, with room for the waves and the drift
+    var INK_HOVER = '(hover: hover) and (pointer: fine)';
+    var INK_STILL = '(prefers-reduced-motion: reduce)';
+    var SVG_NS = 'http://www.w3.org/2000/svg';
+
+    var inkDot = document.querySelector('.flex-nav .ball-drop');
+    var ink = null;
+
+    function inkAllowed() {
+        return !!window.matchMedia && window.matchMedia(INK_HOVER).matches &&
+            !window.matchMedia(INK_STILL).matches;
+    }
+
+    function easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    function easeOutQuad(t) {
+        return 1 - (1 - t) * (1 - t);
+    }
+
+    // The spread, from 0 to 1, at a moment.
+    function inkSpread(now) {
+        var t = ink.duration ? clamp((now - ink.start) / ink.duration, 0, 1) : 1;
+        return ink.from + (ink.to - ink.from) * ink.ease(t);
+    }
+
+    // Spread out or pull back from wherever the shape is now, so it never snaps.
+    function inkTo(target) {
+        var now = performance.now();
+        var current = inkSpread(now);
+        ink.from = current;
+        ink.to = target;
+        ink.start = now;
+        ink.duration = (target ? INK_SPREAD_MS : INK_RETREAT_MS) * Math.abs(target - current);
+        ink.ease = target ? easeOutCubic : easeOutQuad;
+        if (!ink.rafId) {
+            ink.svg.style.display = '';
+            ink.rafId = requestAnimationFrame(inkFrame);
+        }
+    }
+
+    function inkFrame(now) {
+        ink.rafId = 0;
+        var spread = inkSpread(now);
+        if (spread <= 0 && ink.to === 0) {
+            // Idle: nothing painted and nothing running.
+            ink.svg.style.display = 'none';
+            return;
+        }
+        var r = inkDot.getBoundingClientRect();
+        var seconds = now / 1000;
+        var cx = r.left + r.width / 2 + INK_DRIFT * Math.sin(seconds * 0.5);
+        var cy = r.top + r.height / 2 + INK_DRIFT * Math.sin(seconds * 0.37 + 1);
+        ink.svg.style.transform = 'translate(' + (cx - INK_BOX / 2) + 'px, ' + (cy - INK_BOX / 2) + 'px)';
+
+        var radius = spread * INK_SIZE / 2;
+        var points = [];
+        for (var i = 0; i < INK_POINTS; i++) {
+            var angle = i / INK_POINTS * Math.PI * 2;
+            var scale = 1;
+            INK_WAVES.forEach(function (w) {
+                scale += w[1] * Math.sin(w[0] * angle + w[2] * seconds + w[3]);
+            });
+            points.push([INK_BOX / 2 + Math.cos(angle) * radius * scale, INK_BOX / 2 + Math.sin(angle) * radius * scale]);
+        }
+        // A smooth closed curve through the points.
+        var d = 'M' + points[0][0].toFixed(2) + ' ' + points[0][1].toFixed(2);
+        for (var k = 0; k < INK_POINTS; k++) {
+            var p0 = points[(k + INK_POINTS - 1) % INK_POINTS];
+            var p1 = points[k];
+            var p2 = points[(k + 1) % INK_POINTS];
+            var p3 = points[(k + 2) % INK_POINTS];
+            d += 'C' + (p1[0] + (p2[0] - p0[0]) / 6).toFixed(2) + ' ' + (p1[1] + (p2[1] - p0[1]) / 6).toFixed(2) +
+                ' ' + (p2[0] - (p3[0] - p1[0]) / 6).toFixed(2) + ' ' + (p2[1] - (p3[1] - p1[1]) / 6).toFixed(2) +
+                ' ' + p2[0].toFixed(2) + ' ' + p2[1].toFixed(2);
+        }
+        ink.path.setAttribute('d', d + 'Z');
+        ink.rafId = requestAnimationFrame(inkFrame);
+    }
+
+    function onInkEnter() {
+        if (!inkAllowed()) {
+            return;
+        }
+        if (!ink) {
+            var svg = document.createElementNS(SVG_NS, 'svg');
+            svg.setAttribute('class', 'ball-drop-ink');
+            svg.setAttribute('aria-hidden', 'true');
+            svg.setAttribute('width', INK_BOX);
+            svg.setAttribute('height', INK_BOX);
+            var path = document.createElementNS(SVG_NS, 'path');
+            svg.appendChild(path);
+            document.body.appendChild(svg);
+            ink = { svg: svg, path: path, from: 0, to: 0, start: 0, duration: 0, ease: easeOutCubic, rafId: 0 };
+        }
+        inkTo(1);
+    }
+
+    function onInkLeave() {
+        if (ink) {
+            inkTo(0);
+        }
+    }
+
+    if (inkDot) {
+        inkDot.addEventListener('mouseenter', onInkEnter);
+        inkDot.addEventListener('mouseleave', onInkLeave);
+    }
+
     // Phones fire height-only resizes when the address bar hides; ignore those.
     // A width change restores the text and the footer at once and removes the ball.
     window.addEventListener('resize', function () {

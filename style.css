@@ -245,6 +245,19 @@ a:hover {
     display: none;
 }
 
+.ball-drop-ink {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1002;
+    pointer-events: none;
+    mix-blend-mode: difference;
+}
+
+.ball-drop-ink path {
+    fill: #fff;
+}
+
 .drop-ball {
     position: absolute;
     top: 0;
