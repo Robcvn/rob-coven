@@ -15,6 +15,9 @@
     var Events = Matter.Events;
 
     var RADIUS = 10;
+    // A multiple of 4 puts a flat edge, not a corner, at the bottom of the ball,
+    // so it lands flat instead of tipping over and rolling away.
+    var BALL_SIDES = 24;
     var STEP_MS = 1000 / 120;      // fixed physics step
     var MAX_FRAME_MS = 50;         // long frames are clamped to this
     // Matter velocities are in px per 1/60s. 18 is 9px per 1/120s step,
@@ -31,6 +34,8 @@
     var FADE_MS = 600;
     var EDGE = 200;                // thickness of the walls and floor
     var SAME_LINE_GAP = 2;         // px between rects that count as touching
+    var EDGE_CHANNEL = 28;         // clear space at each side so the ball can always fall
+    var ALL_CATEGORIES = 0xFFFFFFFF;
 
     // Platforms are never taken from inside these.
     var EXCLUDE = '.nav, .mobile-menu, .ball-drop, .drop-ball, script, style, noscript, hr';
@@ -48,6 +53,8 @@
     });
 
     var staticBodies = [];
+    var platforms = [];
+    var passThrough = [];          // platforms the ball started inside
     var floorBody = null;
     var built = false;
     var docHeight = 0;
@@ -181,13 +188,23 @@
     function buildWorld() {
         Composite.remove(engine.world, staticBodies);
         staticBodies = [];
+        platforms = [];
 
         viewWidth = document.documentElement.clientWidth;
         docHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
 
+        // Trim platforms clear of the edge channels; drop any with nothing left.
+        var minX = EDGE_CHANNEL;
+        var maxX = viewWidth - EDGE_CHANNEL;
         collectRects().forEach(function (r) {
-            staticBodies.push(staticRect((r.l + r.r) / 2, (r.t + r.b) / 2, r.r - r.l, r.b - r.t, 1, 'platform'));
+            var left = Math.max(r.l, minX);
+            var right = Math.min(r.r, maxX);
+            if (right <= left) {
+                return;
+            }
+            platforms.push(staticRect((left + right) / 2, (r.t + r.b) / 2, right - left, r.b - r.t, 1, 'platform'));
         });
+        staticBodies = platforms.slice();
 
         // Walls at the viewport edges, floor at the bottom of the document.
         var wallHeight = docHeight + EDGE * 4;
@@ -198,6 +215,46 @@
 
         Composite.add(engine.world, staticBodies);
         built = true;
+
+        // The old bodies are gone; if the ball was still falling clear, carry that over.
+        if (ball && passThrough.length) {
+            passThrough = [];
+            startPassThrough();
+        }
+    }
+
+    // ---------- Starting inside content ----------
+
+    function boundsOverlap(a, b) {
+        return a.min.x < b.max.x && a.max.x > b.min.x &&
+            a.min.y < b.max.y && a.max.y > b.min.y;
+    }
+
+    // Platforms the ball starts inside are ignored until it has fully cleared them.
+    function startPassThrough() {
+        platforms.forEach(function (platform) {
+            if (boundsOverlap(ball.bounds, platform.bounds)) {
+                platform.collisionFilter.mask = 0;
+                passThrough.push(platform);
+            }
+        });
+    }
+
+    function updatePassThrough() {
+        passThrough = passThrough.filter(function (platform) {
+            if (boundsOverlap(ball.bounds, platform.bounds)) {
+                return true;
+            }
+            platform.collisionFilter.mask = ALL_CATEGORIES;
+            return false;
+        });
+    }
+
+    function endPassThrough() {
+        passThrough.forEach(function (platform) {
+            platform.collisionFilter.mask = ALL_CATEGORIES;
+        });
+        passThrough = [];
     }
 
     // ---------- Collisions ----------
@@ -264,6 +321,9 @@
             return;
         }
         capSpeed();
+        if (passThrough.length) {
+            updatePassThrough();
+        }
         // In case the ball ever slips past the floor.
         if (ball.position.y > docHeight + RADIUS) {
             startFade();
@@ -322,6 +382,7 @@
             cancelAnimationFrame(rafId);
             rafId = 0;
         }
+        endPassThrough();
         if (ball) {
             Composite.remove(engine.world, ball);
             ball = null;
@@ -341,19 +402,17 @@
         fadeTimer = setTimeout(removeBall, FADE_MS);
     }
 
-    function drop(button) {
+    // The ball always starts at the horizontal centre, just under the nav.
+    function drop() {
         if (!built) {
             buildWorld();
         }
         removeBall();
 
-        var navRect = nav.getBoundingClientRect();
-        var buttonRect = button.getBoundingClientRect();
-        var dotBottom = buttonRect.top + buttonRect.height / 2 + 5;
-        var x = buttonRect.left + buttonRect.width / 2 + window.scrollX;
-        var y = Math.max(navRect.bottom, dotBottom) + RADIUS + 2 + window.scrollY;
+        var x = document.documentElement.clientWidth / 2 + window.scrollX;
+        var y = nav.getBoundingClientRect().bottom + RADIUS + 2 + window.scrollY;
 
-        ball = Bodies.circle(x, y, RADIUS, {
+        ball = Bodies.polygon(x, y, BALL_SIDES, RADIUS, {
             restitution: 0.25,
             friction: 0.3,
             frictionStatic: 1,
@@ -361,6 +420,7 @@
             label: 'ball'
         });
         Composite.add(engine.world, ball);
+        startPassThrough();
 
         ballEl = document.createElement('div');
         ballEl.className = 'drop-ball';
@@ -386,6 +446,10 @@
 
     function onKeyDown(event) {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return;
+        }
+        // Leave the browser's Back and Forward shortcuts alone.
+        if (event.altKey || event.ctrlKey || event.metaKey) {
             return;
         }
         if (!ball || isTypingTarget(event.target) || isTypingTarget(document.activeElement)) {
@@ -487,7 +551,12 @@
 
     function onPress(event) {
         startListening();
-        drop(event.currentTarget);
+        drop();
+        // A mouse or touch press (detail > 0) should not leave a focus ring behind;
+        // keyboard activation keeps focus on the dot.
+        if (event.detail > 0) {
+            event.currentTarget.blur();
+        }
     }
 
     for (var i = 0; i < buttons.length; i++) {
