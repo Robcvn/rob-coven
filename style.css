@@ -287,6 +287,103 @@ html.ball-drop-active {
     touch-action: manipulation;
 }
 
+.row.drop-footer-fade {
+    transition: opacity 0.8s ease;
+}
+
+.row.drop-footer-out {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.row.drop-footer-gone {
+    display: none;
+}
+
+.drop-stage {
+    position: relative;
+    height: 320px;
+    background-color: #131313;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+}
+
+.drop-stage.is-shown {
+    opacity: 1;
+}
+
+.drop-track {
+    position: absolute;
+    top: -60px;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.drop-platform {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background-color: #fff;
+}
+
+.drop-flag {
+    position: absolute;
+    bottom: 100%;
+    width: 1px;
+    height: 28px;
+    background-color: #fff;
+}
+
+.drop-flag::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 1px;
+    width: 12px;
+    height: 8px;
+    background-color: #fff;
+}
+
+.drop-hud {
+    position: absolute;
+    top: 32px;
+    left: 0;
+}
+
+.drop-hint {
+    position: absolute;
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    transition: opacity 0.6s ease;
+}
+
+.drop-hint.is-gone {
+    opacity: 0;
+}
+
+.drop-exit {
+    position: absolute;
+    top: 32px;
+    right: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    line-height: inherit;
+    cursor: pointer;
+}
+
+.drop-exit:hover {
+    color: limegreen;
+    transition: all 0.3s ease;
+}
+
 .ham-menu {
     display: none;
 }
@@ -668,6 +765,10 @@ body.nav-open {
 
     body.nav-open .nav > .ball-drop {
         display: none;
+    }
+
+    .drop-stage {
+        height: 280px;
     }
 
     .mobile-menu.active {

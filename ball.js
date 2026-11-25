@@ -4,6 +4,8 @@
 // Jump with the Up arrow key, or by tapping on a phone: two jumps before landing.
 // A hard enough hit knocks the letters under the ball loose, and fast loose letters
 // can knock more letters loose in turn.
+// When the ball reaches the footer line, the footer turns into a short side-scrolling run.
+// Pressing the dot while a game is on ends it.
 (function () {
     'use strict';
 
@@ -53,6 +55,44 @@
     var CHAIN_KEEP = 0.6;          // share of its velocity a loose letter keeps after a break
     var MAX_LOOSE = 400;
     var RETURN_MS = 800;
+    var CLICK_AFTER_TOUCH_MS = 1000; // a click this soon after a touch came from that touch
+
+    // Footer game
+    var GAME_SPEED = 220;          // px per second the platforms move
+    var GAME_BALL_AT = 0.25;       // the ball's place across the stage
+    var GAME_OVERHANG = 60;        // px the drawing area reaches above the stage, for the drop from the line
+    var GAME_GLIDE_MS = 600;       // the carried-over ball moves to its place as it drops
+    var GAME_FADE_MS = 800;
+    var GAME_RESTART_MS = 500;
+    var GAME_FINISH_MS = 2000;
+    var PX_PER_METRE = 10;
+    var SMALL_SCREEN = '(max-width: 800px)';
+    // The ball rises and falls as the page ball does, with Matter's gravity and the ball's air friction.
+    var BASE_MS = 1000 / PX_PER_SECOND;                 // Matter's velocity unit
+    var GAME_GRAVITY = 0.001 * STEP_MS * STEP_MS;       // px per step, added every step
+    var GAME_AIR = 1 - 0.01 * STEP_MS / BASE_MS;
+    var GAME_JUMP = JUMP_SPEED * STEP_MS / BASE_MS;     // px per step
+    var GAME_MAX_STEP = MAX_SPEED * STEP_MS / BASE_MS;
+    // Platforms: left end, right end and height above the stage bottom, in px along the course.
+    // 0 is the ball's place when a run starts; the first platform starts at the stage's left edge.
+    var COURSE = [
+        [null, 560, 60],
+        [640, 960, 90],
+        [1060, 1300, 50],
+        [1500, 1820, 70],          // double jump
+        [1890, 2130, 130],
+        [2250, 2490, 60],
+        [2560, 2840, 150],         // double jump
+        [2940, 3140, 80],
+        [3350, 3610, 80],          // double jump
+        [3690, 3890, 120],
+        [3990, 4250, 60],
+        [4450, 4670, 90],          // double jump
+        [4750, 4950, 130],
+        [5060, 5260, 50],
+        [5340, 5940, 90]
+    ];
+    var FLAG_AT = 5840;
 
     // Collision categories: platforms, walls and the floor keep Matter's default.
     var CAT_BALL = 0x0002;
@@ -62,8 +102,11 @@
     var ACTIVE_CLASS = 'ball-drop-active';
 
     // Platforms are never taken from inside these.
-    var EXCLUDE = '.nav, .mobile-menu, .ball-drop, .drop-ball, .drop-char, script, style, noscript, hr';
+    var EXCLUDE = '.nav, .mobile-menu, .ball-drop, .drop-ball, .drop-char, .drop-stage, script, style, noscript, hr';
     var TAP_IGNORE = 'a, button, input, select, textarea';
+    // Links and buttons a touch tap always follows, even while a game is on.
+    var KEEP_CONTROLS = '.nav, .mobile-menu, .drop-exit';
+    var FOOTER_ROWS = '.mobile-name, .footer-links, .footer';
     var HIGHLIGHT_NAME = 'drop-broken';
 
     var buttons = document.querySelectorAll('.ball-drop');
@@ -88,6 +131,7 @@
     var edges = [];                // walls and floor
     var passThrough = [];          // platforms the ball started inside
     var floorBody = null;
+    var floorIsLine = false;       // the floor is the footer divider, where the footer game starts
     var built = false;
     var docHeight = 0;
     var floorY = 0;
@@ -118,6 +162,10 @@
     var keysOn = false;
     var orientationOn = false;
     var tap = null;
+    var lastTouchEnd = null;
+
+    var reachedFooter = false;
+    var game = null;
 
     // ---------- Platforms ----------
 
@@ -263,9 +311,11 @@
     }
 
     function footerTop() {
+        floorIsLine = false;
         if (footerLine) {
             var r = footerLine.getBoundingClientRect();
             if (r.width || r.height) {
+                floorIsLine = true;
                 return r.top + window.scrollY;
             }
         }
@@ -445,6 +495,10 @@
 
     // The line's platform is replaced by platforms for the characters that remain.
     function applyBreak(found) {
+        // The letter that hit the line has been removed since, by the limit on loose letters: ignore it.
+        if (found.by && !found.by.body) {
+            return;
+        }
         var platform = found.platform;
         var chars = platformChars(platform);
         var bounds = platform.bounds;
@@ -690,16 +744,16 @@
 
             if (isStart && (a === floorBody || b === floorBody)) {
                 var item = (a === floorBody ? b : a).looseChar;
-                if (item) {
+                if (item && item.body) {
                     pendingFloor.push(item);
                 }
             }
 
             // A loose letter that hits intact text hard enough knocks the letters it lands on loose.
-            // Sleeping letters never break anything.
+            // Sleeping letters never break anything, and nor do letters that have been removed.
             var letter = a.looseChar || b.looseChar;
             var line = a.looseChar ? b : a;
-            if (isStart && canBreak && letter && line.text && !letter.body.isSleeping && !breakPending(line)) {
+            if (isStart && canBreak && letter && letter.body && line.text && !letter.body.isSleeping && !breakPending(line)) {
                 var letterVelocity = Body.getVelocity(letter.body);
                 if (impactSpeed(pair, letter.body, letterVelocity, line) >= CHAIN_SPEED) {
                     var struck = charsUnder(line, letter.body.bounds.min.x, letter.body.bounds.max.x);
@@ -716,7 +770,7 @@
             }
             var other = a === ball ? b : a;
             if (isStart && other === floorBody) {
-                startFade();
+                reachFloor();
             }
 
             // A hard enough hit on a line of text knocks the letters under the ball loose.
@@ -790,6 +844,11 @@
         pendingBreaks.forEach(applyBreak);
         pendingFloor.forEach(fadeLoose);
         updateLoose();
+        // Started after the step, so every letter knocked loose in it goes home with the rest.
+        if (reachedFooter) {
+            reachedFooter = false;
+            startFooterGame();
+        }
 
         if (!ball) {
             return;
@@ -800,7 +859,7 @@
         }
         // In case the ball ever slips past the floor.
         if (ball.position.y > floorY + RADIUS) {
-            startFade();
+            reachFloor();
         }
     }
 
@@ -856,15 +915,22 @@
 
     // ---------- Ball ----------
 
-    function removeBall() {
-        clearTimeout(fadeTimer);
-        fadeTimer = 0;
-        fading = false;
-        endPassThrough();
+    function clearActive() {
         var root = document.documentElement;
         root.classList.remove(ACTIVE_CLASS);
         if (!root.className) {
             root.removeAttribute('class');
+        }
+    }
+
+    function removeBall() {
+        clearTimeout(fadeTimer);
+        fadeTimer = 0;
+        fading = false;
+        reachedFooter = false;
+        endPassThrough();
+        if (!game) {
+            clearActive();
         }
         if (ball) {
             Composite.remove(engine.world, ball);
@@ -884,6 +950,18 @@
         ballEl.classList.add('is-fading');
         fadeTimer = setTimeout(removeBall, FADE_MS);
         startReturn();
+    }
+
+    // On the footer line the ball carries on into the footer game; anywhere else it fades.
+    function reachFloor() {
+        if (fading) {
+            return;
+        }
+        if (floorIsLine) {
+            reachedFooter = true;
+        } else {
+            startFade();
+        }
     }
 
     // The ball always starts at the horizontal centre, just under the nav.
@@ -925,6 +1003,10 @@
     }
 
     function jump() {
+        if (game) {
+            gameJump();
+            return;
+        }
         if (!ball || fading || jumpsLeft <= 0) {
             return;
         }
@@ -943,14 +1025,25 @@
     }
 
     function onKeyDown(event) {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp') {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp' &&
+                event.key !== 'Escape') {
             return;
         }
         // Leave the browser's Back and Forward shortcuts alone.
         if (event.altKey || event.ctrlKey || event.metaKey) {
             return;
         }
-        if (!ball || isTypingTarget(event.target) || isTypingTarget(document.activeElement)) {
+        if (event.key === 'Escape') {
+            if (game) {
+                endFooterGame(true);
+            }
+            return;
+        }
+        if ((!ball && !game) || isTypingTarget(event.target) || isTypingTarget(document.activeElement)) {
+            return;
+        }
+        // Left and Right do nothing in the footer game.
+        if (game && event.key !== 'ArrowUp') {
             return;
         }
         event.preventDefault();
@@ -981,8 +1074,8 @@
 
     // ---------- Touch ----------
 
-    // A tap is a short, still touch that is not on a link, button or form control.
-    // The listeners are passive and never block scrolling.
+    // A tap is a short, still touch that is not on a form control or on a link or button in the
+    // header or the menu. The listeners are passive and never block scrolling.
     function findTouch(list, id) {
         for (var i = 0; i < list.length; i++) {
             if (list[i].identifier === id) {
@@ -1012,14 +1105,22 @@
         }
     }
 
+    // A link or button in the page content, outside the header and the menu.
+    function contentControl(el) {
+        var control = el && el.closest('a, button');
+        return control && !control.closest(KEEP_CONTROLS) ? control : null;
+    }
+
     function onTouchEnd(event) {
+        // Remembered for the click that may follow this touch.
+        lastTouchEnd = { time: performance.now(), playing: !!(ball || game) };
         var touch = tap && findTouch(event.changedTouches, tap.id);
         if (!touch) {
             return;
         }
         var target = tap.target.nodeType === 1 ? tap.target : tap.target.parentElement;
         var isTap = performance.now() - tap.time <= TAP_MS && !movedTooFar(touch) &&
-            !(target && target.closest(TAP_IGNORE));
+            !(target && target.closest(TAP_IGNORE) && !contentControl(target));
         tap = null;
         if (isTap) {
             jump();
@@ -1028,6 +1129,20 @@
 
     function onTouchCancel() {
         tap = null;
+    }
+
+    // While a game is on, a click that came from a touch on a link or button in the page content
+    // is cancelled, so a tap meant as a jump never opens a link. Touch events are never blocked.
+    function onClickCapture(event) {
+        var recent = lastTouchEnd && performance.now() - lastTouchEnd.time < CLICK_AFTER_TOUCH_MS;
+        var fromTouch = event.pointerType ? event.pointerType === 'touch' : recent;
+        if (!fromTouch || (!ball && !game && !(recent && lastTouchEnd.playing))) {
+            return;
+        }
+        var target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+        if (contentControl(target)) {
+            event.preventDefault();
+        }
     }
 
     // ---------- Tilt ----------
@@ -1082,6 +1197,7 @@
             document.addEventListener('touchmove', onTouchMove, { passive: true });
             document.addEventListener('touchend', onTouchEnd, { passive: true });
             document.addEventListener('touchcancel', onTouchCancel, { passive: true });
+            document.addEventListener('click', onClickCapture, true);
         }
         if (orientationOn || typeof window.DeviceOrientationEvent === 'undefined') {
             return;
@@ -1105,12 +1221,314 @@
         }
     }
 
+    // ---------- Footer game ----------
+
+    function px(value) {
+        return value + 'px';
+    }
+
+    function makeEl(tag, className, parent, text) {
+        var el = document.createElement(tag);
+        el.className = className;
+        if (text) {
+            el.textContent = text;
+        }
+        if (parent) {
+            parent.appendChild(el);
+        }
+        return el;
+    }
+
+    // The platform under the ball's place on the course, at the given height.
+    function platformAt(at, y) {
+        for (var i = 0; i < game.platforms.length; i++) {
+            var p = game.platforms[i];
+            if (at >= p.left && at <= p.right && Math.abs(p.y - y) < 0.5) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    // Platforms are one way: the ball lands on the first one it crosses going down.
+    function landing(at, from, to) {
+        var found = null;
+        game.platforms.forEach(function (p) {
+            if (at >= p.left && at <= p.right && from <= p.y && to >= p.y && (!found || p.y < found.y)) {
+                found = p;
+            }
+        });
+        return found;
+    }
+
+    function startRun(x, y) {
+        var g = game;
+        g.phase = 'drop';          // the platforms wait until the ball lands
+        g.travel = 0;
+        g.x = x;
+        g.y = y;
+        g.step = 0;
+        g.grounded = false;
+        g.jumpsLeft = JUMPS;
+    }
+
+    function gameStep() {
+        var g = game;
+        if (g.phase === 'run') {
+            g.travel = Math.min(g.travel + GAME_SPEED * STEP_MS / 1000, FLAG_AT);
+            if (g.travel >= FLAG_AT) {
+                finishRun();
+            }
+        }
+        if (g.glide < GAME_GLIDE_MS) {
+            g.glide = Math.min(g.glide + STEP_MS, GAME_GLIDE_MS);
+            var t = g.glide / GAME_GLIDE_MS;
+            g.x = g.ballX + (g.fromX - g.ballX) * (1 - t * t * (3 - 2 * t));
+        }
+        var at = g.travel + g.x - g.ballX;
+        if (g.grounded && !platformAt(at, g.y + RADIUS)) {
+            g.grounded = false;
+        }
+        if (!g.grounded) {
+            g.step = clamp(g.step * GAME_AIR + GAME_GRAVITY, -GAME_MAX_STEP, GAME_MAX_STEP);
+            var from = g.y + RADIUS;
+            g.y += g.step;
+            var p = g.step > 0 ? landing(at, from, g.y + RADIUS) : null;
+            if (p) {
+                g.y = p.y - RADIUS;
+                g.step = 0;
+                g.grounded = true;
+                g.jumpsLeft = JUMPS;
+                if (g.phase === 'drop') {
+                    g.phase = 'run';
+                }
+            }
+        }
+        // Fallen out of the stage: a short pause, then the run starts again.
+        if (g.y - RADIUS > g.height && g.phase !== 'finished') {
+            g.phase = 'pause';
+            g.timers.push(setTimeout(function () {
+                startRun(g.ballX, g.lineY - RADIUS);
+            }, GAME_RESTART_MS));
+        }
+    }
+
+    function gameRender() {
+        var g = game;
+        g.ballEl.style.transform = 'translate(' + (g.x - RADIUS) + 'px, ' + (g.y - RADIUS + GAME_OVERHANG) + 'px)';
+        g.platforms.forEach(function (p) {
+            p.el.style.transform = 'translate(' + (g.ballX + p.left - g.travel) + 'px, ' + (p.y + GAME_OVERHANG) + 'px)';
+        });
+        var metres = Math.floor(g.travel / PX_PER_METRE);
+        if (metres !== g.metres) {
+            g.metres = metres;
+            g.distanceEl.textContent = metres + ' m';
+        }
+    }
+
+    function gameFrame(now) {
+        var g = game;
+        if (!g) {
+            return;
+        }
+        g.rafId = 0;
+        g.accumulator += clamp(now - g.lastTime, 0, MAX_FRAME_MS);
+        g.lastTime = now;
+        while (g.accumulator >= STEP_MS) {
+            g.accumulator -= STEP_MS;
+            if (g.phase !== 'pause' && g.phase !== 'ending') {
+                gameStep();
+            }
+        }
+        if (game === g && g.phase !== 'ending') {
+            gameRender();
+            g.rafId = requestAnimationFrame(gameFrame);
+        }
+    }
+
+    function gameJump() {
+        var g = game;
+        if (g.phase !== 'run' || g.jumpsLeft <= 0) {
+            return;
+        }
+        g.jumpsLeft -= 1;
+        g.grounded = false;
+        g.step = -GAME_JUMP;
+        if (!g.jumped) {
+            g.jumped = true;
+            g.hintEl.classList.add('is-gone');
+        }
+    }
+
+    function finishRun() {
+        var g = game;
+        g.phase = 'finished';
+        g.hintEl.textContent = 'Finished';
+        g.hintEl.classList.remove('opac-5', 'is-gone');
+        g.timers.push(setTimeout(function () {
+            endFooterGame(false);
+        }, GAME_FINISH_MS));
+    }
+
+    // The page game ends where the ball meets the footer line, and the footer gives way to a stage.
+    function startFooterGame() {
+        if (!ball || game) {
+            return;
+        }
+        var fromX = ball.position.x;
+        var fromY = ball.position.y;
+        startReturn();
+        endPassThrough();
+        Composite.remove(engine.world, ball);
+        ball = null;
+        releaseKeys();
+        var el = ballEl;
+        ballEl = null;
+
+        var stage = makeEl('div', 'drop-stage');
+        var track = makeEl('div', 'drop-track', stage);
+        track.setAttribute('aria-hidden', 'true');
+        var hud = makeEl('div', 'drop-hud', stage);
+        makeEl('span', 'f-label', hud, 'Distance');
+        var distanceEl = makeEl('span', 'label-text opac-5', hud, '0 m');
+        var small = window.matchMedia && window.matchMedia(SMALL_SCREEN).matches;
+        var hintEl = makeEl('span', 'label-text opac-5 drop-hint', stage, small ? 'Tap to jump' : 'Up arrow to jump');
+        var exitEl = makeEl('button', 'label-text opac-5 drop-exit', stage, 'Exit');
+        exitEl.type = 'button';
+        exitEl.addEventListener('click', function () {
+            endFooterGame(true);
+        });
+
+        // The stage sits directly under the line; the footer rows are held where they were while they fade.
+        var row = footerLine.closest('.row') || footerLine.parentNode;
+        var before = row.getBoundingClientRect().height;
+        stage.style.marginTop = px(-parseFloat(getComputedStyle(footerLine).marginBottom));
+        footerLine.parentNode.insertBefore(stage, footerLine.nextSibling);
+        var shift = row.getBoundingClientRect().height - before;
+        var rows = Array.prototype.map.call(document.querySelectorAll(FOOTER_ROWS), function (rowEl) {
+            var saved = { el: rowEl, style: rowEl.getAttribute('style') };
+            // Set as an attribute, not through el.style, so removing it later leaves no trace.
+            rowEl.setAttribute('style', (saved.style ? saved.style + ' ' : '') + 'top: ' + px(-shift) + ';');
+            rowEl.classList.add('drop-footer-fade');
+            return saved;
+        });
+
+        var rect = stage.getBoundingClientRect();
+        var width = stage.clientWidth;
+        var height = stage.clientHeight;
+        var ballX = Math.round(width * GAME_BALL_AT);
+        var platforms = COURSE.map(function (c) {
+            var left = c[0] === null ? -ballX : c[0];
+            var platformEl = makeEl('div', 'drop-platform', track);
+            platformEl.style.width = px(c[1] - left);
+            return { left: left, right: c[1], y: height - c[2], el: platformEl };
+        });
+        var last = platforms[platforms.length - 1];
+        makeEl('div', 'drop-flag', last.el).style.left = px(FLAG_AT - last.left);
+        el.classList.remove('is-fading');
+        track.appendChild(el);
+
+        game = {
+            stage: stage, rows: rows, shift: shift, ballEl: el, distanceEl: distanceEl, hintEl: hintEl,
+            platforms: platforms, width: width, height: height, ballX: ballX,
+            lineY: -footerLine.getBoundingClientRect().height,
+            fromX: fromX - (rect.left + window.scrollX), glide: 0,
+            jumped: false, metres: 0, timers: [], rafId: 0, accumulator: 0, lastTime: performance.now()
+        };
+        startRun(game.fromX, fromY - (rect.top + window.scrollY));
+
+        // Commit the starting styles, then fade the footer out and the stage in.
+        stage.getBoundingClientRect();
+        stage.classList.add('is-shown');
+        rows.forEach(function (saved) {
+            saved.el.classList.add('drop-footer-out');
+        });
+        game.timers.push(setTimeout(function () {
+            rows.forEach(function (saved) {
+                saved.el.classList.add('drop-footer-gone');
+            });
+        }, GAME_FADE_MS));
+
+        // Bring the whole stage into view, below the sticky nav.
+        var top = rect.top + window.scrollY;
+        var bottom = top + height;
+        var navBottom = nav.getBoundingClientRect().bottom;
+        var target = null;
+        if (bottom > window.scrollY + window.innerHeight) {
+            target = bottom - window.innerHeight;
+        }
+        if (top < (target === null ? window.scrollY : target) + navBottom) {
+            target = top - navBottom;
+        }
+        if (target !== null) {
+            window.scrollTo({ top: target, behavior: 'smooth' });
+        }
+
+        gameRender();
+        game.rafId = requestAnimationFrame(gameFrame);
+    }
+
+    // At the flag the stage fades out and the footer fades back in; every other way out is immediate.
+    function endFooterGame(immediate) {
+        var g = game;
+        if (!g) {
+            return;
+        }
+        g.timers.forEach(clearTimeout);
+        g.timers = [];
+        if (!immediate) {
+            if (g.phase === 'ending') {
+                return;
+            }
+            g.phase = 'ending';
+            g.stage.classList.remove('is-shown');
+            g.ballEl.classList.add('is-fading');
+            g.rows.forEach(function (saved) {
+                saved.el.classList.remove('drop-footer-gone');
+            });
+            g.stage.getBoundingClientRect();
+            g.rows.forEach(function (saved) {
+                saved.el.classList.remove('drop-footer-out');
+            });
+            // The page is about to get shorter: scroll up first so nothing jumps when the stage goes.
+            var maxScroll = document.documentElement.scrollHeight - g.shift - window.innerHeight;
+            if (window.scrollY > maxScroll) {
+                window.scrollTo({ top: Math.max(0, maxScroll), behavior: 'smooth' });
+            }
+            g.timers.push(setTimeout(function () {
+                endFooterGame(true);
+            }, GAME_FADE_MS));
+            return;
+        }
+        game = null;
+        cancelAnimationFrame(g.rafId);
+        g.stage.parentNode.removeChild(g.stage);
+        g.rows.forEach(function (saved) {
+            saved.el.classList.remove('drop-footer-fade', 'drop-footer-out', 'drop-footer-gone');
+            if (saved.style === null) {
+                saved.el.removeAttribute('style');
+            } else {
+                saved.el.setAttribute('style', saved.style);
+            }
+        });
+        if (!ball) {
+            clearActive();
+        }
+    }
+
     // ---------- Setup ----------
 
+    // The dot is an on/off switch: it drops a ball, or ends the game that is on.
     function onPress(event) {
         startListening();
-        restoreText();
-        drop();
+        if (ball || game) {
+            endFooterGame(true);
+            restoreText();
+            removeBall();
+        } else {
+            restoreText();
+            drop();
+        }
         // A mouse or touch press (detail > 0) should not leave a focus ring behind;
         // keyboard activation keeps focus on the dot.
         if (event.detail > 0) {
@@ -1123,11 +1541,12 @@
     }
 
     // Phones fire height-only resizes when the address bar hides; ignore those.
-    // A width change restores the text at once and removes the ball.
+    // A width change restores the text and the footer at once and removes the ball.
     window.addEventListener('resize', function () {
         if (window.innerWidth !== lastWidth) {
             lastWidth = window.innerWidth;
             restoreText();
+            endFooterGame(true);
             removeBall();
             buildWorld();
         }
