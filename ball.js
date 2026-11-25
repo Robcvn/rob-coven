@@ -947,12 +947,14 @@
 
     // ---------- Ball ----------
 
+    // The game is over: the ink pulls back too.
     function clearActive() {
         var root = document.documentElement;
         root.classList.remove(ACTIVE_CLASS);
         if (!root.className) {
             root.removeAttribute('class');
         }
+        inkGameOff();
     }
 
     function removeBall() {
@@ -1603,6 +1605,7 @@
                 return;
             }
             g.phase = 'ending';
+            inkGameOff();
             g.stage.classList.remove('is-shown');
             g.ballEl.classList.add('is-fading');
             g.rows.forEach(function (saved) {
@@ -1650,6 +1653,7 @@
         } else {
             restoreText();
             drop();
+            inkGameOn(event.currentTarget);
         }
         // A mouse or touch press (detail > 0) should not leave a focus ring behind;
         // keyboard activation keeps focus on the dot.
@@ -1667,24 +1671,36 @@
     // With a mouse, hovering the dot in the desktop nav spills a blob of ink that inverts
     // everything under it. Its edge is a few slow waves around a circle, so it is never round,
     // never jagged, and keeps moving gently while the pointer stays.
-    var INK_SIZE = 220;            // px across when fully spread
+    // Starting a game spreads the ink from the pressed dot over the whole screen, and the page
+    // stays inverted until the game ends, when the ink pulls back into the dot.
+    var INK_SIZE = 220;            // px across when fully spread on hover
     var INK_SPREAD_MS = 900;
     var INK_RETREAT_MS = 350;
+    var INK_COVER_MS = 1100;       // from the dot to covering the screen
+    var INK_UNCOVER_MS = 600;      // from covering the screen back into the dot
+    var INK_FADE_MS = 200;         // with reduced motion the inversion fades instead
     var INK_POINTS = 48;
     // Waves around the edge: [waves per turn, share of the radius, radians per second, phase].
     var INK_WAVES = [[2, 0.08, 0.42, 0.3], [3, 0.055, -0.31, 1.9], [4, 0.035, 0.55, 4.1], [5, 0.02, -0.67, 2.6]];
+    var INK_WAVE_TOTAL = INK_WAVES.reduce(function (sum, w) {
+        return sum + w[1];
+    }, 0);
     var INK_DRIFT = 3;             // px the whole shape wanders
-    var INK_BOX = INK_SIZE * 1.5;  // drawing area, with room for the waves and the drift
     var INK_HOVER = '(hover: hover) and (pointer: fine)';
     var INK_STILL = '(prefers-reduced-motion: reduce)';
+    var INVERTED_CLASS = 'ball-drop-inverted';
+    var SWITCHING_CLASS = 'ball-drop-switching';
     var SVG_NS = 'http://www.w3.org/2000/svg';
 
     var inkDot = document.querySelector('.flex-nav .ball-drop');
     var ink = null;
 
+    function prefersStill() {
+        return !!window.matchMedia && window.matchMedia(INK_STILL).matches;
+    }
+
     function inkAllowed() {
-        return !!window.matchMedia && window.matchMedia(INK_HOVER).matches &&
-            !window.matchMedia(INK_STILL).matches;
+        return !!window.matchMedia && window.matchMedia(INK_HOVER).matches && !prefersStill();
     }
 
     function easeOutCubic(t) {
@@ -1695,42 +1711,131 @@
         return 1 - (1 - t) * (1 - t);
     }
 
-    // The spread, from 0 to 1, at a moment.
-    function inkSpread(now) {
+    function makeInk() {
+        if (ink) {
+            return;
+        }
+        var svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('class', 'ball-drop-ink');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.style.display = 'none';
+        var path = document.createElementNS(SVG_NS, 'path');
+        svg.appendChild(path);
+        // Once the screen is covered, one plain layer stands in for the moving shape.
+        var cover = document.createElement('div');
+        cover.className = 'ball-drop-invert';
+        cover.setAttribute('aria-hidden', 'true');
+        cover.style.display = 'none';
+        document.body.appendChild(svg);
+        document.body.appendChild(cover);
+        ink = {
+            svg: svg, path: path, cover: cover, width: 0, height: 0,
+            from: 0, to: 0, start: 0, duration: 0, ease: easeOutCubic, rafId: 0, fadeTimer: 0,
+            centreEl: inkDot, cx: 0, cy: 0, hovering: false, gameOn: false, covered: false
+        };
+    }
+
+    // The visible header dot: the one in the desktop nav, or the one beside the hamburger.
+    function visibleDot() {
+        for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].offsetParent) {
+                return buttons[i];
+            }
+        }
+        return ink.centreEl;
+    }
+
+    // The colour exceptions read correctly only while the whole page is inverted. Switching
+    // them skips the platforms' colour fade so they never pass through a wrong colour.
+    function setInverted(on) {
+        var root = document.documentElement;
+        root.classList.add(SWITCHING_CLASS);
+        root.classList.toggle(INVERTED_CLASS, on);
+        root.offsetWidth;
+        root.classList.remove(SWITCHING_CLASS);
+        if (!root.className) {
+            root.removeAttribute('class');
+        }
+    }
+
+    function inkCentre() {
+        var r = ink.centreEl.getBoundingClientRect();
+        if (r.width || r.height) {
+            ink.cx = r.left + r.width / 2;
+            ink.cy = r.top + r.height / 2;
+        }
+    }
+
+    // Big enough that even the shortest part of the wavy edge is past every corner of the screen.
+    function coverRadius() {
+        inkCentre();
+        var w = document.documentElement.clientWidth;
+        var h = window.innerHeight;
+        var far = Math.max(
+            Math.hypot(ink.cx, ink.cy), Math.hypot(w - ink.cx, ink.cy),
+            Math.hypot(ink.cx, h - ink.cy), Math.hypot(w - ink.cx, h - ink.cy)
+        );
+        return (far + INK_DRIFT + 2) / (1 - INK_WAVE_TOTAL);
+    }
+
+    // The radius, in px, at a moment.
+    function inkRadius(now) {
         var t = ink.duration ? clamp((now - ink.start) / ink.duration, 0, 1) : 1;
         return ink.from + (ink.to - ink.from) * ink.ease(t);
     }
 
     // Spread out or pull back from wherever the shape is now, so it never snaps.
-    function inkTo(target) {
+    // `fullMs` is the time for a change of `fullRadius`.
+    function inkTo(target, fullMs, fullRadius) {
         var now = performance.now();
-        var current = inkSpread(now);
+        var current = inkRadius(now);
         ink.from = current;
         ink.to = target;
         ink.start = now;
-        ink.duration = (target ? INK_SPREAD_MS : INK_RETREAT_MS) * Math.abs(target - current);
-        ink.ease = target ? easeOutCubic : easeOutQuad;
+        ink.duration = fullMs * Math.min(1, Math.abs(target - current) / fullRadius);
+        ink.ease = target > current ? easeOutCubic : easeOutQuad;
+        ink.svg.style.display = '';
         if (!ink.rafId) {
-            ink.svg.style.display = '';
             ink.rafId = requestAnimationFrame(inkFrame);
         }
     }
 
     function inkFrame(now) {
         ink.rafId = 0;
-        var spread = inkSpread(now);
-        if (spread <= 0 && ink.to === 0) {
+        var radius = inkRadius(now);
+        var done = now >= ink.start + ink.duration;
+        if (done && ink.gameOn) {
+            // The screen is covered: swap to the plain layer and stop.
+            ink.covered = true;
+            ink.cover.style.display = '';
+            ink.svg.style.display = 'none';
+            setInverted(true);
+            return;
+        }
+        if (done && radius <= 0) {
             // Idle: nothing painted and nothing running.
             ink.svg.style.display = 'none';
             return;
         }
-        var r = inkDot.getBoundingClientRect();
+        inkCentre();
         var seconds = now / 1000;
-        var cx = r.left + r.width / 2 + INK_DRIFT * Math.sin(seconds * 0.5);
-        var cy = r.top + r.height / 2 + INK_DRIFT * Math.sin(seconds * 0.37 + 1);
-        ink.svg.style.transform = 'translate(' + (cx - INK_BOX / 2) + 'px, ' + (cy - INK_BOX / 2) + 'px)';
+        var cx = ink.cx + INK_DRIFT * Math.sin(seconds * 0.5);
+        var cy = ink.cy + INK_DRIFT * Math.sin(seconds * 0.37 + 1);
 
-        var radius = spread * INK_SIZE / 2;
+        // The drawing area is the part of the screen the shape can reach.
+        var reach = radius * (1 + INK_WAVE_TOTAL) + 2;
+        var left = Math.max(0, Math.floor(cx - reach));
+        var top = Math.max(0, Math.floor(cy - reach));
+        var width = Math.max(1, Math.min(document.documentElement.clientWidth, Math.ceil(cx + reach)) - left);
+        var height = Math.max(1, Math.min(window.innerHeight, Math.ceil(cy + reach)) - top);
+        if (width !== ink.width || height !== ink.height) {
+            ink.width = width;
+            ink.height = height;
+            ink.svg.setAttribute('width', width);
+            ink.svg.setAttribute('height', height);
+        }
+        ink.svg.style.transform = 'translate(' + left + 'px, ' + top + 'px)';
+
         var points = [];
         for (var i = 0; i < INK_POINTS; i++) {
             var angle = i / INK_POINTS * Math.PI * 2;
@@ -1738,7 +1843,7 @@
             INK_WAVES.forEach(function (w) {
                 scale += w[1] * Math.sin(w[0] * angle + w[2] * seconds + w[3]);
             });
-            points.push([INK_BOX / 2 + Math.cos(angle) * radius * scale, INK_BOX / 2 + Math.sin(angle) * radius * scale]);
+            points.push([cx - left + Math.cos(angle) * radius * scale, cy - top + Math.sin(angle) * radius * scale]);
         }
         // A smooth closed curve through the points.
         var d = 'M' + points[0][0].toFixed(2) + ' ' + points[0][1].toFixed(2);
@@ -1755,27 +1860,86 @@
         ink.rafId = requestAnimationFrame(inkFrame);
     }
 
+    // With reduced motion there is no shape: the plain layer fades in and out.
+    function fadeCover(on) {
+        clearTimeout(ink.fadeTimer);
+        var cover = ink.cover;
+        cover.classList.add('is-easing');
+        if (on) {
+            cover.style.opacity = '0';
+            cover.style.display = '';
+            cover.getBoundingClientRect();
+            cover.style.opacity = '1';
+        } else {
+            cover.style.opacity = '0';
+            ink.fadeTimer = setTimeout(function () {
+                cover.style.display = 'none';
+                cover.style.opacity = '';
+                cover.classList.remove('is-easing');
+            }, INK_FADE_MS);
+        }
+    }
+
+    // A game has started from `dot`.
+    function inkGameOn(dot) {
+        makeInk();
+        if (ink.gameOn) {
+            return;
+        }
+        ink.gameOn = true;
+        if (prefersStill()) {
+            fadeCover(true);
+            setInverted(true);
+            return;
+        }
+        ink.centreEl = dot;
+        inkTo(coverRadius(), INK_COVER_MS, coverRadius());
+    }
+
+    // The game has ended: pull back into the visible dot, or to the hover size if the mouse is on it.
+    function inkGameOff() {
+        if (!ink || !ink.gameOn) {
+            return;
+        }
+        ink.gameOn = false;
+        setInverted(false);
+        if (prefersStill() || ink.cover.classList.contains('is-easing')) {
+            fadeCover(false);
+            return;
+        }
+        var full = coverRadius();
+        if (ink.covered) {
+            // Hand back from the plain layer to the shape at full size.
+            ink.covered = false;
+            ink.from = ink.to = full;
+            ink.duration = 0;
+            ink.cover.style.display = 'none';
+        }
+        ink.centreEl = visibleDot();
+        var settle = ink.hovering && inkAllowed() && ink.centreEl === inkDot ? INK_SIZE / 2 : 0;
+        inkTo(settle, INK_UNCOVER_MS, full);
+    }
+
+    // Hovering is remembered during a game, so the shape can settle at the hover size when it ends.
     function onInkEnter() {
         if (!inkAllowed()) {
             return;
         }
-        if (!ink) {
-            var svg = document.createElementNS(SVG_NS, 'svg');
-            svg.setAttribute('class', 'ball-drop-ink');
-            svg.setAttribute('aria-hidden', 'true');
-            svg.setAttribute('width', INK_BOX);
-            svg.setAttribute('height', INK_BOX);
-            var path = document.createElementNS(SVG_NS, 'path');
-            svg.appendChild(path);
-            document.body.appendChild(svg);
-            ink = { svg: svg, path: path, from: 0, to: 0, start: 0, duration: 0, ease: easeOutCubic, rafId: 0 };
+        makeInk();
+        ink.hovering = true;
+        if (!ink.gameOn) {
+            ink.centreEl = inkDot;
+            inkTo(INK_SIZE / 2, INK_SPREAD_MS, INK_SIZE / 2);
         }
-        inkTo(1);
     }
 
     function onInkLeave() {
-        if (ink) {
-            inkTo(0);
+        if (!ink) {
+            return;
+        }
+        ink.hovering = false;
+        if (!ink.gameOn) {
+            inkTo(0, INK_RETREAT_MS, INK_SIZE / 2);
         }
     }
 
