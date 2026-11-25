@@ -58,7 +58,16 @@
     var CLICK_AFTER_TOUCH_MS = 1000; // a click this soon after a touch came from that touch
 
     // Footer game
-    var GAME_SPEED = 220;          // px per second the platforms move
+    // The nominal speed rises steadily from the start speed to the end speed at the flag, 60 seconds in.
+    var GAME_SPEED_START = 220;    // px per second
+    var GAME_SPEED_END = 440;
+    var GAME_RUN_S = 60;           // run time at the flag
+    var GAME_PHASE_S = 15;         // the platforms change colour at the start of each phase
+    var GAME_PHASES = ['', 'is-red', 'is-green', 'is-blue'];
+    // The most nominal px any landing platform lies ahead of the ball 0.4s before the latest jump for it.
+    // Narrower stages scale the on-screen speed down so that much always fits in front of the ball.
+    var GAME_LOOK_AHEAD = 580;
+    var HIGH_SCORE_KEY = 'ball-drop-high-score';
     var GAME_BALL_AT = 0.25;       // the ball's place across the stage
     var GAME_OVERHANG = 60;        // px the drawing area reaches above the stage, for the drop from the line
     var GAME_GLIDE_MS = 600;       // the carried-over ball moves to its place as it drops
@@ -73,26 +82,49 @@
     var GAME_AIR = 1 - 0.01 * STEP_MS / BASE_MS;
     var GAME_JUMP = JUMP_SPEED * STEP_MS / BASE_MS;     // px per step
     var GAME_MAX_STEP = MAX_SPEED * STEP_MS / BASE_MS;
-    // Platforms: left end, right end and height above the stage bottom, in px along the course.
-    // 0 is the ball's place when a run starts; the first platform starts at the stage's left edge.
+    // Platforms: the run times, in seconds, at which the ball reaches each end, and the height above
+    // the stage bottom in px. The first platform starts at the stage's left edge. Four phases of
+    // 15 seconds, each with shorter platforms, bigger steps, tighter timing and more double jumps.
     var COURSE = [
-        [null, 560, 60],
-        [640, 960, 90],
-        [1060, 1300, 50],
-        [1500, 1820, 70],          // double jump
-        [1890, 2130, 130],
-        [2250, 2490, 60],
-        [2560, 2840, 150],         // double jump
-        [2940, 3140, 80],
-        [3350, 3610, 80],          // double jump
-        [3690, 3890, 120],
-        [3990, 4250, 60],
-        [4450, 4670, 90],          // double jump
-        [4750, 4950, 130],
-        [5060, 5260, 50],
-        [5340, 5940, 90]
+        [null, 2.50, 60],
+        [2.80, 4.20, 90],
+        [4.68, 5.88, 50],
+        [6.75, 8.15, 70],          // double jump
+        [8.34, 9.54, 130],
+        [10.09, 11.29, 60],
+        [11.99, 13.29, 150],       // double jump
+        [13.84, 15.04, 80],
+        [15.42, 16.62, 80],
+        [16.98, 17.88, 120],
+        [18.50, 19.35, 60],
+        [20.23, 21.13, 130],       // double jump
+        [21.73, 22.58, 80],
+        [23.42, 24.32, 160],       // double jump
+        [24.98, 25.83, 80],
+        [26.77, 27.67, 120],       // double jump
+        [28.25, 29.10, 80],
+        [29.37, 30.17, 140],
+        [30.89, 31.59, 50],
+        [32.42, 33.17, 150],       // double jump
+        [33.85, 34.55, 80],
+        [35.43, 36.18, 160],       // double jump
+        [36.91, 37.61, 60],
+        [38.57, 39.27, 110],       // double jump
+        [39.62, 40.37, 160],
+        [41.10, 41.95, 60],
+        [42.78, 43.73, 160],       // double jump
+        [44.48, 45.08, 50],
+        [45.95, 46.50, 160],       // double jump
+        [47.34, 47.84, 40],
+        [48.67, 49.22, 160],       // double jump
+        [50.01, 50.51, 70],
+        [51.44, 51.99, 160],       // double jump
+        [52.80, 53.30, 60],
+        [54.20, 54.75, 160],       // double jump
+        [55.51, 56.01, 80],
+        [56.96, 57.51, 160],       // double jump
+        [58.19, 60.40, 120]
     ];
-    var FLAG_AT = 5840;
 
     // Collision categories: platforms, walls and the floor keep Matter's default.
     var CAT_BALL = 0x0002;
@@ -1239,6 +1271,59 @@
         return el;
     }
 
+    // Nominal px along the course at a run time, in seconds.
+    function courseAt(t) {
+        return GAME_SPEED_START * t + (GAME_SPEED_END - GAME_SPEED_START) * t * t / (2 * GAME_RUN_S);
+    }
+
+    // ---------- High score ----------
+
+    var highScore = 0;
+
+    function readHighScore() {
+        try {
+            var stored = parseInt(window.localStorage.getItem(HIGH_SCORE_KEY), 10);
+            if (stored > highScore) {
+                highScore = stored;
+            }
+        } catch (e) {}
+        return highScore;
+    }
+
+    function saveHighScore() {
+        try {
+            window.localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
+        } catch (e) {}
+    }
+
+    // The column rises into view the first time; after that only a new value does.
+    function showHighScore(g) {
+        var value = makeEl('span', 'label-text opac-5', null, highScore + ' m');
+        if (g.bestValueEl) {
+            value.classList.add('drop-rise');
+            g.bestEl.replaceChild(value, g.bestValueEl);
+        } else {
+            g.bestEl.appendChild(value);
+            g.bestEl.classList.add('is-shown');
+        }
+        g.bestValueEl = value;
+    }
+
+    // A run has ended, by a fall, at the flag or by leaving the game.
+    function endRun(g) {
+        if (g.recorded) {
+            return;
+        }
+        g.recorded = true;
+        if (g.metres > readHighScore()) {
+            highScore = g.metres;
+            saveHighScore();
+            showHighScore(g);
+        }
+    }
+
+    // ---------- Course ----------
+
     // The platform under the ball's place on the course, at the given height.
     function platformAt(at, y) {
         for (var i = 0; i < game.platforms.length; i++) {
@@ -1261,22 +1346,45 @@
         return found;
     }
 
+    function setColour(g, index) {
+        if (g.colour !== index) {
+            if (g.colour) {
+                g.track.classList.remove(GAME_PHASES[g.colour]);
+            }
+            if (index) {
+                g.track.classList.add(GAME_PHASES[index]);
+            }
+            g.colour = index;
+        }
+    }
+
     function startRun(x, y) {
         var g = game;
         g.phase = 'drop';          // the platforms wait until the ball lands
+        g.time = 0;                // seconds alive in this run
         g.travel = 0;
+        g.metres = 0;
+        g.recorded = false;
         g.x = x;
         g.y = y;
         g.step = 0;
         g.grounded = false;
         g.jumpsLeft = JUMPS;
+        // Back to white at once, without the fade.
+        g.track.classList.add('is-instant');
+        setColour(g, 0);
+        g.track.getBoundingClientRect();
+        g.track.classList.remove('is-instant');
     }
 
     function gameStep() {
         var g = game;
         if (g.phase === 'run') {
-            g.travel = Math.min(g.travel + GAME_SPEED * STEP_MS / 1000, FLAG_AT);
-            if (g.travel >= FLAG_AT) {
+            g.time = Math.min(g.time + STEP_MS / 1000, GAME_RUN_S);
+            g.travel = courseAt(g.time);
+            g.metres = Math.floor(g.travel / PX_PER_METRE);
+            setColour(g, Math.min(GAME_PHASES.length - 1, Math.floor(g.time / GAME_PHASE_S)));
+            if (g.time >= GAME_RUN_S) {
                 finishRun();
             }
         }
@@ -1285,7 +1393,7 @@
             var t = g.glide / GAME_GLIDE_MS;
             g.x = g.ballX + (g.fromX - g.ballX) * (1 - t * t * (3 - 2 * t));
         }
-        var at = g.travel + g.x - g.ballX;
+        var at = g.travel + (g.x - g.ballX) / g.scale;
         if (g.grounded && !platformAt(at, g.y + RADIUS)) {
             g.grounded = false;
         }
@@ -1307,6 +1415,7 @@
         // Fallen out of the stage: a short pause, then the run starts again.
         if (g.y - RADIUS > g.height && g.phase !== 'finished') {
             g.phase = 'pause';
+            endRun(g);
             g.timers.push(setTimeout(function () {
                 startRun(g.ballX, g.lineY - RADIUS);
             }, GAME_RESTART_MS));
@@ -1317,12 +1426,11 @@
         var g = game;
         g.ballEl.style.transform = 'translate(' + (g.x - RADIUS) + 'px, ' + (g.y - RADIUS + GAME_OVERHANG) + 'px)';
         g.platforms.forEach(function (p) {
-            p.el.style.transform = 'translate(' + (g.ballX + p.left - g.travel) + 'px, ' + (p.y + GAME_OVERHANG) + 'px)';
+            p.el.style.transform = 'translate(' + (g.ballX + (p.left - g.travel) * g.scale) + 'px, ' + (p.y + GAME_OVERHANG) + 'px)';
         });
-        var metres = Math.floor(g.travel / PX_PER_METRE);
-        if (metres !== g.metres) {
-            g.metres = metres;
-            g.distanceEl.textContent = metres + ' m';
+        if (g.metres !== g.shownMetres) {
+            g.shownMetres = g.metres;
+            g.distanceEl.textContent = g.metres + ' m';
         }
     }
 
@@ -1365,6 +1473,7 @@
         g.phase = 'finished';
         g.hintEl.textContent = 'Finished';
         g.hintEl.classList.remove('opac-5', 'is-gone');
+        endRun(g);
         g.timers.push(setTimeout(function () {
             endFooterGame(false);
         }, GAME_FINISH_MS));
@@ -1389,8 +1498,11 @@
         var track = makeEl('div', 'drop-track', stage);
         track.setAttribute('aria-hidden', 'true');
         var hud = makeEl('div', 'drop-hud', stage);
-        makeEl('span', 'f-label', hud, 'Distance');
-        var distanceEl = makeEl('span', 'label-text opac-5', hud, '0 m');
+        var distanceCol = makeEl('div', 'drop-score', hud);
+        makeEl('span', 'f-label', distanceCol, 'Distance');
+        var distanceEl = makeEl('span', 'label-text opac-5', distanceCol, '0 m');
+        var bestEl = makeEl('div', 'drop-score drop-best', hud);
+        makeEl('span', 'f-label', bestEl, 'High score');
         var small = window.matchMedia && window.matchMedia(SMALL_SCREEN).matches;
         var hintEl = makeEl('span', 'label-text opac-5 drop-hint', stage, small ? 'Tap to jump' : 'Up arrow to jump');
         var exitEl = makeEl('button', 'label-text opac-5 drop-exit', stage, 'Exit');
@@ -1417,25 +1529,32 @@
         var width = stage.clientWidth;
         var height = stage.clientHeight;
         var ballX = Math.round(width * GAME_BALL_AT);
+        // On-screen px per nominal px.
+        var scale = Math.min(1, (width - ballX) / GAME_LOOK_AHEAD);
         var platforms = COURSE.map(function (c) {
-            var left = c[0] === null ? -ballX : c[0];
+            var left = c[0] === null ? -ballX / scale : courseAt(c[0]);
+            var right = courseAt(c[1]);
             var platformEl = makeEl('div', 'drop-platform', track);
-            platformEl.style.width = px(c[1] - left);
-            return { left: left, right: c[1], y: height - c[2], el: platformEl };
+            platformEl.style.width = px((right - left) * scale);
+            return { left: left, right: right, y: height - c[2], el: platformEl };
         });
         var last = platforms[platforms.length - 1];
-        makeEl('div', 'drop-flag', last.el).style.left = px(FLAG_AT - last.left);
+        makeEl('div', 'drop-flag', last.el).style.left = px((courseAt(GAME_RUN_S) - last.left) * scale);
         el.classList.remove('is-fading');
         track.appendChild(el);
 
         game = {
-            stage: stage, rows: rows, shift: shift, ballEl: el, distanceEl: distanceEl, hintEl: hintEl,
-            platforms: platforms, width: width, height: height, ballX: ballX,
+            stage: stage, track: track, rows: rows, shift: shift, ballEl: el, distanceEl: distanceEl, hintEl: hintEl,
+            bestEl: bestEl, bestValueEl: null, colour: 0,
+            platforms: platforms, width: width, height: height, ballX: ballX, scale: scale,
             lineY: -footerLine.getBoundingClientRect().height,
             fromX: fromX - (rect.left + window.scrollX), glide: 0,
-            jumped: false, metres: 0, timers: [], rafId: 0, accumulator: 0, lastTime: performance.now()
+            jumped: false, shownMetres: 0, timers: [], rafId: 0, accumulator: 0, lastTime: performance.now()
         };
         startRun(game.fromX, fromY - (rect.top + window.scrollY));
+        if (readHighScore() > 0) {
+            showHighScore(game);
+        }
 
         // Commit the starting styles, then fade the footer out and the stage in.
         stage.getBoundingClientRect();
@@ -1476,6 +1595,7 @@
         }
         g.timers.forEach(clearTimeout);
         g.timers = [];
+        endRun(g);
         if (!immediate) {
             if (g.phase === 'ending') {
                 return;
