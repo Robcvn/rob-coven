@@ -300,6 +300,24 @@ html.ball-drop-active {
     touch-action: manipulation;
 }
 
+/* On touch screens, links and buttons in the page content cannot be tapped while a game is on,
+   so a tap meant as a jump lands on the page instead. The header, the menu and Exit still work. */
+@media (hover: none) and (pointer: coarse) {
+    html.ball-drop-active a,
+    html.ball-drop-active button {
+        pointer-events: none;
+    }
+
+    html.ball-drop-active .nav a,
+    html.ball-drop-active .nav button,
+    html.ball-drop-active .mobile-menu a,
+    html.ball-drop-active .mobile-menu button,
+    html.ball-drop-active .ball-drop,
+    html.ball-drop-active .drop-exit {
+        pointer-events: auto;
+    }
+}
+
 .row.drop-footer-fade {
     transition: opacity 0.8s ease;
 }

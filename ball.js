@@ -1165,9 +1165,11 @@
 
     // While a game is on, a click that came from a touch on a link or button in the page content
     // is cancelled, so a tap meant as a jump never opens a link. Touch events are never blocked.
+    // This backs up the style sheet, which takes those links out of hit testing on touch screens.
+    // Some browsers report a tap's click as a mouse click, so a recent touch counts as well.
     function onClickCapture(event) {
         var recent = lastTouchEnd && performance.now() - lastTouchEnd.time < CLICK_AFTER_TOUCH_MS;
-        var fromTouch = event.pointerType ? event.pointerType === 'touch' : recent;
+        var fromTouch = event.pointerType === 'touch' || recent;
         if (!fromTouch || (!ball && !game && !(recent && lastTouchEnd.playing))) {
             return;
         }
