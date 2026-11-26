@@ -3,7 +3,8 @@
 // Steer with the Left/Right arrow keys, or by tilting a phone.
 // Jump with the Up arrow key, or by tapping on a phone: two jumps before landing.
 // A hard enough hit knocks the letters under the ball loose, and fast loose letters
-// can knock more letters loose in turn.
+// can knock more letters loose in turn. A hard hit on a pile of loose letters throws
+// them aside and carries through to the text under them.
 // When the ball reaches the footer line, the footer turns into a short side-scrolling run.
 // Pressing the dot while a game is on ends it.
 (function () {
@@ -53,6 +54,7 @@
     var BREAK_KEEP = 0.4;          // share of its velocity the ball keeps after a break
     var CHAIN_SPEED = 375;         // px per second at which a loose letter knocks text loose
     var CHAIN_KEEP = 0.6;          // share of its velocity a loose letter keeps after a break
+    var PILE_PUSH = 4;             // outward and upward velocity given to loose letters the ball hits hard
     var MAX_LOOSE = 400;
     var RETURN_MS = 800;
     var CLICK_AFTER_TOUCH_MS = 1000; // a click this soon after a touch came from that touch
@@ -184,6 +186,7 @@
     var broken = false;
     var pendingBreaks = [];
     var pendingFloor = [];
+    var pendingPile = null;        // a hard hit on loose letters in this step
     var returnTimer = 0;
 
     var keyLeft = false;
@@ -560,6 +563,49 @@
         }
     }
 
+    // A hard hit on loose letters: every loose letter within reach of the ball is thrown out and up,
+    // and the text directly under them, within a line height below the contact, breaks as if
+    // the ball had hit it. The ball goes on through the thrown letters.
+    function applyPile(hit) {
+        if (!ball) {
+            return;
+        }
+        var thrown = [];
+        loose.forEach(function (item) {
+            var body = item.body;
+            if (!body) {
+                return;
+            }
+            var dx = body.position.x - ball.position.x;
+            var dy = body.position.y - ball.position.y;
+            if (dx * dx + dy * dy > BREAK_REACH * BREAK_REACH) {
+                return;
+            }
+            var side = dx < 0 || (dx === 0 && Math.random() < 0.5) ? -1 : 1;
+            Sleeping.set(body, false);
+            Body.setVelocity(body, { x: side * PILE_PUSH, y: -PILE_PUSH });
+            // It ignores the ball until it is clear of it.
+            body.collisionFilter.mask = NOT_BALL;
+            item.fresh = true;
+            item.freshFrom = null;
+            thrown.push(body.bounds);
+        });
+        platforms.forEach(function (platform) {
+            var top = platform.bounds.min.y;
+            if (!platform.text || breakPending(platform) || top < hit.y || top > hit.y + platform.bounds.max.y - top) {
+                return;
+            }
+            var struck = charsUnder(platform, hit.x - BREAK_REACH, hit.x + BREAK_REACH).filter(function (c) {
+                return thrown.some(function (bounds) {
+                    return c.rect.r > bounds.min.x && c.rect.l < bounds.max.x;
+                });
+            });
+            if (struck.length) {
+                pendingBreaks.push({ platform: platform, hit: struck, velocity: hit.velocity });
+            }
+        });
+    }
+
     // ---------- Loose characters ----------
 
     function effectiveOpacity(el) {
@@ -803,6 +849,21 @@
                 reachFloor();
             }
 
+            // A hard hit on loose letters goes through them. Every other contact with loose
+            // letters in the same step is switched off too, so the ball does not bounce.
+            if (other.looseChar && (pendingPile || (isStart && canBreak && !fading &&
+                    impactSpeed(pair, ball, ballVelocity, other) >= BREAK_SPEED))) {
+                if (!pendingPile) {
+                    var contactY = ball.position.y + RADIUS;
+                    for (var s = 0; s < pair.collision.supportCount; s++) {
+                        contactY = Math.min(contactY, pair.collision.supports[s].y);
+                    }
+                    pendingPile = { x: ball.position.x, y: contactY, velocity: { x: ballVelocity.x, y: ballVelocity.y } };
+                }
+                pair.isActive = false;
+                continue;
+            }
+
             // A hard enough hit on a line of text knocks the letters under the ball loose.
             // The pair is switched off for this step so the ball goes through instead of bouncing.
             if (isStart && canBreak && other.text && !fading && !breakPending(other) &&
@@ -869,8 +930,12 @@
         grounded = false;
         pendingBreaks = [];
         pendingFloor = [];
+        pendingPile = null;
         Engine.update(engine, STEP_MS);
 
+        if (pendingPile) {
+            applyPile(pendingPile);
+        }
         pendingBreaks.forEach(applyBreak);
         pendingFloor.forEach(fadeLoose);
         updateLoose();
