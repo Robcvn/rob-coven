@@ -62,8 +62,6 @@
     var GAME_SPEED_START = 220;    // px per second
     var GAME_SPEED_END = 440;
     var GAME_RUN_S = 60;           // run time at the flag
-    var GAME_PHASE_S = 15;         // the platforms change colour at the start of each phase
-    var GAME_PHASES = ['', 'is-red', 'is-green', 'is-blue'];
     // The most nominal px any landing platform lies ahead of the ball 0.4s before the latest jump for it.
     // Narrower stages scale the on-screen speed down so that much always fits in front of the ball.
     var GAME_LOOK_AHEAD = 580;
@@ -1350,18 +1348,6 @@
         return found;
     }
 
-    function setColour(g, index) {
-        if (g.colour !== index) {
-            if (g.colour) {
-                g.track.classList.remove(GAME_PHASES[g.colour]);
-            }
-            if (index) {
-                g.track.classList.add(GAME_PHASES[index]);
-            }
-            g.colour = index;
-        }
-    }
-
     function startRun(x, y) {
         var g = game;
         g.phase = 'drop';          // the platforms wait until the ball lands
@@ -1374,11 +1360,6 @@
         g.step = 0;
         g.grounded = false;
         g.jumpsLeft = JUMPS;
-        // Back to white at once, without the fade.
-        g.track.classList.add('is-instant');
-        setColour(g, 0);
-        g.track.getBoundingClientRect();
-        g.track.classList.remove('is-instant');
     }
 
     function gameStep() {
@@ -1387,7 +1368,6 @@
             g.time = Math.min(g.time + STEP_MS / 1000, GAME_RUN_S);
             g.travel = courseAt(g.time);
             g.metres = Math.floor(g.travel / PX_PER_METRE);
-            setColour(g, Math.min(GAME_PHASES.length - 1, Math.floor(g.time / GAME_PHASE_S)));
             if (g.time >= GAME_RUN_S) {
                 finishRun();
             }
@@ -1549,7 +1529,7 @@
 
         game = {
             stage: stage, track: track, rows: rows, shift: shift, ballEl: el, distanceEl: distanceEl, hintEl: hintEl,
-            bestEl: bestEl, bestValueEl: null, colour: 0,
+            bestEl: bestEl, bestValueEl: null,
             platforms: platforms, width: width, height: height, ballX: ballX, scale: scale,
             lineY: -footerLine.getBoundingClientRect().height,
             fromX: fromX - (rect.left + window.scrollX), glide: 0,
@@ -1689,7 +1669,6 @@
     var INK_HOVER = '(hover: hover) and (pointer: fine)';
     var INK_STILL = '(prefers-reduced-motion: reduce)';
     var INVERTED_CLASS = 'ball-drop-inverted';
-    var SWITCHING_CLASS = 'ball-drop-switching';
     var SVG_NS = 'http://www.w3.org/2000/svg';
 
     var inkDot = document.querySelector('.flex-nav .ball-drop');
@@ -1745,14 +1724,10 @@
         return ink.centreEl;
     }
 
-    // The colour exceptions read correctly only while the whole page is inverted. Switching
-    // them skips the platforms' colour fade so they never pass through a wrong colour.
+    // The colour exception reads correctly only while the whole page is inverted.
     function setInverted(on) {
         var root = document.documentElement;
-        root.classList.add(SWITCHING_CLASS);
         root.classList.toggle(INVERTED_CLASS, on);
-        root.offsetWidth;
-        root.classList.remove(SWITCHING_CLASS);
         if (!root.className) {
             root.removeAttribute('class');
         }

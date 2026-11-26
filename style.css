@@ -274,22 +274,10 @@ a:hover {
     transition: opacity 0.2s ease;
 }
 
-/* While the page is inverted, these get the inverse colour so they still read true on screen. */
+/* While the page is inverted, the limegreen hover gets the inverse colour so it still reads true on screen. */
 html.ball-drop-inverted a:hover,
 html.ball-drop-inverted .drop-exit:hover {
     color: rgb(205, 50, 205);
-}
-
-html.ball-drop-inverted .drop-track.is-red .drop-platform {
-    background-color: rgb(0, 156, 184);
-}
-
-html.ball-drop-inverted .drop-track.is-green .drop-platform {
-    background-color: rgb(205, 50, 205);
-}
-
-html.ball-drop-inverted .drop-track.is-blue .drop-platform {
-    background-color: rgb(225, 111, 0);
 }
 
 /* A wide-gamut screen does the inversion in its own colour space, so the inverse is taken there. */
@@ -298,22 +286,6 @@ html.ball-drop-inverted .drop-track.is-blue .drop-platform {
     html.ball-drop-inverted .drop-exit:hover {
         color: color(display-p3 0.5975 0.2075 0.6989);
     }
-
-    html.ball-drop-inverted .drop-track.is-red .drop-platform {
-        background-color: color(display-p3 0.0716 0.5714 0.6801);
-    }
-
-    html.ball-drop-inverted .drop-track.is-green .drop-platform {
-        background-color: color(display-p3 0.5975 0.2075 0.6989);
-    }
-
-    html.ball-drop-inverted .drop-track.is-blue .drop-platform {
-        background-color: color(display-p3 0.7279 0.4435 0.0311);
-    }
-}
-
-html.ball-drop-switching .drop-platform {
-    transition: none;
 }
 
 .drop-ball {
@@ -417,23 +389,6 @@ html.ball-drop-active {
     left: 0;
     height: 2px;
     background-color: #fff;
-    transition: background-color 0.8s ease;
-}
-
-.drop-track.is-instant .drop-platform {
-    transition: none;
-}
-
-.drop-track.is-red .drop-platform {
-    background-color: tomato;
-}
-
-.drop-track.is-green .drop-platform {
-    background-color: limegreen;
-}
-
-.drop-track.is-blue .drop-platform {
-    background-color: dodgerblue;
 }
 
 .drop-flag {
