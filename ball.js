@@ -1,7 +1,8 @@
 // Ball drop: an experimental physics toy for the home page.
 // Press the white dot in the nav to drop a ball onto the page text.
-// Steer with the Left/Right arrow keys, or by tilting a phone.
-// Jump with the Up arrow key, or by tapping on a phone: two jumps before landing.
+// Steer with the Left/Right arrow keys and hold Shift to run, or tilt a phone: further tilts run.
+// Jump with the Up arrow key or Space, or by touching the screen on a phone: hold for a higher jump.
+// In the air, hold toward a wall to slide down it, and jump to kick off it.
 // A hard enough hit knocks the letters under the ball loose, and fast loose letters
 // can knock more letters loose in turn.
 // When the ball reaches the footer line it stays there, and every loose letter falls to the line and collects.
@@ -29,12 +30,10 @@
     // Matter velocities are in px per 1/60s. 18 is 9px per 1/120s step,
     // well under a ball radius plus the height of a line of text.
     var MAX_SPEED = 18;
-    var MAX_SPEED_X = 6;
-    var PUSH_GROUND = 0.35;        // velocity added per step at full input
-    var PUSH_AIR = 0.1;
-    var TILT_DEAD_ZONE = 3;        // degrees
-    var TILT_FULL = 30;            // degrees
-    var FOLLOW_START = 0.6;        // fraction of the viewport height
+    var TILT_DEAD_ZONE = 3;        // degrees; past this a tilt walks
+    var TILT_RUN = 20;             // degrees; past this a tilt runs
+    var FOLLOW_START = 0.6;        // fraction of the viewport height; a falling ball is kept above this
+    var FOLLOW_TOP = 0.3;          // fraction of the viewport height; a rising ball is kept below this
     var FOLLOW_EASE = 0.15;
     var REST_SPEED = 0.2;
     var FADE_MS = 600;
@@ -44,10 +43,21 @@
     var ALL_CATEGORIES = 0xFFFFFFFF;
 
     var PX_PER_SECOND = 60;        // Matter velocity units to px per second
-    var JUMP_SPEED = 7.3;          // upward velocity of a jump; lifts the ball about 80px
-    var JUMPS = 2;
-    var TAP_MS = 250;
-    var TAP_MOVE = 10;             // px
+    // Steering sets the ball's horizontal speed directly. Speeds are in px per second.
+    var WALK_SPEED = 240;
+    var RUN_SPEED = 480;           // while Shift is held
+    var GROUND_ACCEL_S = 0.15;     // seconds from standing to top speed on the ground
+    var GROUND_STOP_S = 0.05;      // seconds from top speed to a stop when no direction is held
+    var SKID_S = 0.15;             // seconds from top speed to a stop when the direction is reversed
+    var AIR_ACCEL_SHARE = 0.8;     // share of the ground rate the ball speeds up at in the air
+    var AIR_STOP_S = 0.25;         // seconds from top speed to a stop in the air with no direction held
+    var JUMP_SPEED = 545;          // upward speed of a jump; held, it lifts the ball about 120px
+    var JUMP_CUT_SPEED = 140;      // upward speed is cut to this when jump is let go while rising
+    var WALL_SLIDE_SPEED = 120;    // the most a ball holding toward a wall falls at
+    var WALL_STICK_MS = 50;        // the ball stays on a wall this long after steering away from it
+    var WALL_JUMP_GRACE_MS = 200;  // a wall jump still works this long after leaving a wall
+    var WALL_NORMAL = 0.7;         // a contact this close to horizontal is a wall
+    var TAP_MOVE = 10;             // px a touch moves before it counts as a scroll
     var BREAK_SPEED = 300;         // px per second into a line of text that knocks letters loose
     var BREAK_REACH = 40;          // px each side of the ball's centre
     var BREAK_KEEP = 0.4;          // share of its velocity the ball keeps after a break
@@ -110,8 +120,14 @@
     var lastTime = 0;
     var accumulator = 0;
     var grounded = false;
-    var jumpsLeft = 0;
     var ballVelocity = { x: 0, y: 0 };
+    var wallTouch = 0;             // side of a wall the ball touched in this step: -1 left, 1 right
+    var wallSide = 0;              // side of the wall the ball is on in the air, or 0
+    var sliding = false;           // on a wall and holding toward it
+    var stickStart = 0;            // when the player steered away from the wall being slid on
+    var lastWallSide = 0;
+    var lastWallTime = -Infinity;
+    var jumpCuttable = false;      // the jump in progress can still be cut short
 
     var loose = [];                // loose characters, oldest first
     var broken = false;
@@ -120,7 +136,8 @@
 
     var keyLeft = false;
     var keyRight = false;
-    var tilt = 0;
+    var keyRun = false;
+    var tilt = 0;                  // degrees, 0 inside the dead zone; positive tilts right
     var keysOn = false;
     var orientationOn = false;
     var tap = null;
@@ -746,10 +763,14 @@
             for (var k = 0; k < collision.supportCount; k++) {
                 if (collision.supports[k].y > ball.position.y + RADIUS * 0.5) {
                     grounded = true;
-                    // Landing from above gives both jumps back.
-                    if (Body.getVelocity(ball).y > -1) {
-                        jumpsLeft = JUMPS;
-                    }
+                }
+            }
+
+            // A contact from the side is a wall, unless it is a loose letter or the ball is moving away from it.
+            if (!other.looseChar && collision.supportCount && Math.abs(collision.normal.x) >= WALL_NORMAL) {
+                var side = collision.supports[0].x > ball.position.x ? 1 : -1;
+                if (ballVelocity.x * side >= 0) {
+                    wallTouch = side;
                 }
             }
         }
@@ -768,13 +789,77 @@
         return Math.max(min, Math.min(max, value));
     }
 
-    function applyInput() {
-        var input = clamp((keyRight ? 1 : 0) - (keyLeft ? 1 : 0) + tilt, -1, 1);
+    // The direction held, -1, 0 or 1, and whether to run. The arrow keys win over a tilt.
+    function steering() {
+        var keys = (keyRight ? 1 : 0) - (keyLeft ? 1 : 0);
+        if (keys) {
+            return { dir: keys, run: keyRun };
+        }
+        return { dir: tilt > 0 ? 1 : (tilt < 0 ? -1 : 0), run: keyRun || Math.abs(tilt) >= TILT_RUN };
+    }
+
+    function approach(value, target, change) {
+        return value < target ? Math.min(target, value + change) : Math.max(target, value - change);
+    }
+
+    // Move the horizontal speed toward the target speed at the rate for the ground or the air.
+    function applyInput(now) {
+        var input = steering();
+        var top = input.run ? RUN_SPEED : WALK_SPEED;
         var v = Body.getVelocity(ball);
-        var vx = v.x + input * (grounded ? PUSH_GROUND : PUSH_AIR);
-        vx = clamp(vx, -MAX_SPEED_X, MAX_SPEED_X);
-        if (vx !== v.x) {
-            Body.setVelocity(ball, { x: vx, y: v.y });
+        var vx = v.x * PX_PER_SECOND;
+
+        // Steering away from a wall being slid on leaves the ball on it for a moment.
+        if (sliding && wallSide && input.dir === -wallSide) {
+            if (!stickStart) {
+                stickStart = now;
+            }
+            if (now - stickStart < WALL_STICK_MS) {
+                Body.setVelocity(ball, { x: 0, y: v.y });
+                return;
+            }
+        } else {
+            stickStart = 0;
+        }
+
+        var seconds;
+        if (!input.dir) {
+            seconds = grounded ? GROUND_STOP_S : AIR_STOP_S;
+        } else if (grounded && vx * input.dir < 0) {
+            seconds = SKID_S;
+        } else {
+            seconds = grounded ? GROUND_ACCEL_S : GROUND_ACCEL_S / AIR_ACCEL_SHARE;
+        }
+        var target = input.dir * top;
+        var next = approach(vx, target, top / seconds * STEP_MS / 1000);
+        if (next !== vx) {
+            Body.setVelocity(ball, { x: next / PX_PER_SECOND, y: v.y });
+        }
+    }
+
+    // After a step: which wall, if any, the ball is on in the air, and the slide down it.
+    function updateWall(now) {
+        var input = steering();
+        var side = grounded ? 0 : wallTouch;
+        // A ball stuck to a wall stays on it while the stick lasts, touching or not.
+        if (!side && !grounded && stickStart && now - stickStart < WALL_STICK_MS) {
+            side = wallSide;
+        }
+        wallSide = side;
+        if (side) {
+            lastWallSide = side;
+            lastWallTime = now;
+        }
+        var stuck = stickStart && now - stickStart < WALL_STICK_MS;
+        sliding = !!side && (input.dir === side || (sliding && stuck));
+        if (sliding) {
+            // Gravity adds to the speed in the next step before the ball moves, so allow for it.
+            var gravityStep = engine.gravity.y * engine.gravity.scale * 1000 * STEP_MS;
+            var cap = (WALL_SLIDE_SPEED - gravityStep) / PX_PER_SECOND;
+            var v = Body.getVelocity(ball);
+            if (v.y > cap) {
+                Body.setVelocity(ball, { x: v.x, y: cap });
+            }
         }
     }
 
@@ -787,11 +872,13 @@
     }
 
     function step() {
+        var now = performance.now();
         if (ball) {
-            applyInput();
+            applyInput(now);
             ballVelocity = Body.getVelocity(ball);
         }
         grounded = false;
+        wallTouch = 0;
         pendingBreaks = [];
         Engine.update(engine, STEP_MS);
 
@@ -801,6 +888,10 @@
         if (!ball) {
             return;
         }
+        if (grounded) {
+            jumpCuttable = jumpCuttable && Body.getVelocity(ball).y < 0;
+        }
+        updateWall(now);
         capSpeed();
         if (passThrough.length) {
             updatePassThrough();
@@ -819,6 +910,8 @@
         ballEl.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
     }
 
+    // The page scrolls down to keep a falling ball above FOLLOW_START, and up to keep a rising ball
+    // below FOLLOW_TOP, easing toward the target either way.
     function follow() {
         if (Body.getSpeed(ball) < REST_SPEED) {
             return;
@@ -828,10 +921,14 @@
         var maxScroll = document.documentElement.scrollHeight - viewHeight;
         var target = Math.min(ball.position.y - viewHeight * FOLLOW_START, maxScroll);
         if (target <= current) {
-            return;
+            target = Math.max(ball.position.y - viewHeight * FOLLOW_TOP, 0);
+            if (target >= current || Body.getVelocity(ball).y >= 0) {
+                return;
+            }
         }
-        var delta = Math.max((target - current) * FOLLOW_EASE, Math.min(1, target - current));
-        window.scrollTo(window.scrollX, current + delta);
+        var distance = Math.abs(target - current);
+        var delta = Math.max(distance * FOLLOW_EASE, Math.min(1, distance));
+        window.scrollTo(window.scrollX, current + (target > current ? delta : -delta));
     }
 
     // Runs while a ball exists or any loose letter is still moving.
@@ -950,10 +1047,11 @@
         var x = document.documentElement.clientWidth / 2 + window.scrollX;
         var y = nav.getBoundingClientRect().bottom + RADIUS + 2 + window.scrollY;
 
+        // Steering sets the speed directly, so the ball neither rolls, grips nor bounces.
         ball = Bodies.polygon(x, y, BALL_SIDES, RADIUS, {
-            restitution: 0.25,
-            friction: 0.3,
-            frictionStatic: 1,
+            restitution: 0,
+            friction: 0,
+            frictionStatic: 0,
             frictionAir: 0.01,
             // 0 keeps the ball awake and its sleep counter at zero, so Matter drops its
             // contacts as soon as it leaves a surface and every landing is a new collision.
@@ -961,6 +1059,7 @@
             collisionFilter: { group: 0, category: CAT_BALL, mask: ALL_CATEGORIES },
             label: 'ball'
         });
+        Body.setInertia(ball, Infinity);
         Composite.add(engine.world, ball);
         startPassThrough();
 
@@ -972,18 +1071,50 @@
         document.documentElement.classList.add(ACTIVE_CLASS);
 
         grounded = false;
-        jumpsLeft = JUMPS;
         ballVelocity = { x: 0, y: 0 };
+        wallSide = 0;
+        sliding = false;
+        stickStart = 0;
+        lastWallTime = -Infinity;
+        jumpCuttable = false;
         render();
         startLoop();
     }
 
+    // One jump from the ground. In the air, a jump on a wall, or just after leaving one,
+    // kicks up and away from it at the current top speed.
     function jump() {
-        if (!ball || fading || jumpsLeft <= 0) {
+        if (!ball || fading) {
             return;
         }
-        jumpsLeft -= 1;
-        Body.setVelocity(ball, { x: Body.getVelocity(ball).x, y: -JUMP_SPEED });
+        var v = Body.getVelocity(ball);
+        if (grounded && v.y > -1) {
+            Body.setVelocity(ball, { x: v.x, y: -JUMP_SPEED / PX_PER_SECOND });
+        } else if (wallSide || performance.now() - lastWallTime <= WALL_JUMP_GRACE_MS) {
+            var side = wallSide || lastWallSide;
+            var top = steering().run ? RUN_SPEED : WALK_SPEED;
+            Body.setVelocity(ball, { x: -side * top / PX_PER_SECOND, y: -JUMP_SPEED / PX_PER_SECOND });
+            wallSide = 0;
+            sliding = false;
+            stickStart = 0;
+            lastWallTime = -Infinity;
+        } else {
+            return;
+        }
+        grounded = false;
+        jumpCuttable = true;
+    }
+
+    // Letting go of jump while the ball is still rising cuts the jump short.
+    function releaseJump() {
+        if (!ball || !jumpCuttable) {
+            return;
+        }
+        jumpCuttable = false;
+        var v = Body.getVelocity(ball);
+        if (v.y < -JUMP_CUT_SPEED / PX_PER_SECOND) {
+            Body.setVelocity(ball, { x: v.x, y: -JUMP_CUT_SPEED / PX_PER_SECOND });
+        }
     }
 
     // ---------- Keyboard ----------
@@ -996,8 +1127,13 @@
         return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
     }
 
+    function isJumpKey(key) {
+        return key === 'ArrowUp' || key === ' ';
+    }
+
     function onKeyDown(event) {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp') {
+        keyRun = event.shiftKey;
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && !isJumpKey(event.key)) {
             return;
         }
         // Leave the browser's Back and Forward shortcuts alone.
@@ -1008,7 +1144,7 @@
             return;
         }
         event.preventDefault();
-        if (event.key === 'ArrowUp') {
+        if (isJumpKey(event.key)) {
             // One jump per press: key repeat is ignored.
             if (!event.repeat) {
                 jump();
@@ -1021,22 +1157,28 @@
     }
 
     function onKeyUp(event) {
+        keyRun = event.shiftKey;
         if (event.key === 'ArrowLeft') {
             keyLeft = false;
         } else if (event.key === 'ArrowRight') {
             keyRight = false;
+        } else if (isJumpKey(event.key)) {
+            releaseJump();
         }
     }
 
     function releaseKeys() {
         keyLeft = false;
         keyRight = false;
+        keyRun = false;
+        releaseJump();
     }
 
     // ---------- Touch ----------
 
-    // A tap is a short, still touch that is not on a form control or on a link or button in the
-    // header or the menu. The listeners are passive and never block scrolling.
+    // A touch jumps as it lands, unless it is in the header or the menu, or on a form control.
+    // Lifting the finger, or moving it far enough to scroll, cuts the jump short.
+    // The listeners are passive and never block scrolling.
     function findTouch(list, id) {
         for (var i = 0; i < list.length; i++) {
             if (list[i].identifier === id) {
@@ -1047,12 +1189,20 @@
     }
 
     function onTouchStart(event) {
-        if (event.touches.length !== 1) {
+        if (tap) {
+            releaseJump();
             tap = null;
+        }
+        if (event.touches.length !== 1) {
             return;
         }
         var touch = event.changedTouches[0];
-        tap = { id: touch.identifier, x: touch.clientX, y: touch.clientY, time: performance.now(), target: event.target };
+        var target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
+        if (target && (target.closest(KEEP_CONTROLS) || (target.closest(TAP_IGNORE) && !contentControl(target)))) {
+            return;
+        }
+        tap = { id: touch.identifier, x: touch.clientX, y: touch.clientY };
+        jump();
     }
 
     function movedTooFar(touch) {
@@ -1062,6 +1212,7 @@
     function onTouchMove(event) {
         var touch = tap && findTouch(event.changedTouches, tap.id);
         if (touch && movedTooFar(touch)) {
+            releaseJump();
             tap = null;
         }
     }
@@ -1075,20 +1226,16 @@
     function onTouchEnd(event) {
         // Remembered for the click that may follow this touch.
         lastTouchEnd = { time: performance.now(), playing: !!ball };
-        var touch = tap && findTouch(event.changedTouches, tap.id);
-        if (!touch) {
-            return;
-        }
-        var target = tap.target.nodeType === 1 ? tap.target : tap.target.parentElement;
-        var isTap = performance.now() - tap.time <= TAP_MS && !movedTooFar(touch) &&
-            !(target && target.closest(TAP_IGNORE) && !contentControl(target));
-        tap = null;
-        if (isTap) {
-            jump();
+        if (tap && findTouch(event.changedTouches, tap.id)) {
+            releaseJump();
+            tap = null;
         }
     }
 
     function onTouchCancel() {
+        if (tap) {
+            releaseJump();
+        }
         tap = null;
     }
 
@@ -1138,8 +1285,7 @@
             degrees = event.gamma;
         }
         var size = Math.abs(degrees);
-        tilt = size <= TILT_DEAD_ZONE ? 0 :
-            (degrees < 0 ? -1 : 1) * Math.min(1, (size - TILT_DEAD_ZONE) / (TILT_FULL - TILT_DEAD_ZONE));
+        tilt = size <= TILT_DEAD_ZONE ? 0 : degrees;
     }
 
     function listenOrientation() {
