@@ -4,8 +4,8 @@
 // Jump with the Up arrow key, or by tapping on a phone: two jumps before landing.
 // A hard enough hit knocks the letters under the ball loose, and fast loose letters
 // can knock more letters loose in turn.
-// When the ball reaches the footer line, the footer turns into a short side-scrolling run.
-// Pressing the dot while a game is on ends it.
+// When the ball reaches the footer line it stays there, and every loose letter falls to the line and collects.
+// Pressing the dot again puts the text back and removes the ball.
 (function () {
     'use strict';
 
@@ -57,73 +57,6 @@
     var RETURN_MS = 800;
     var CLICK_AFTER_TOUCH_MS = 1000; // a click this soon after a touch came from that touch
 
-    // Footer game
-    // The nominal speed rises steadily from the start speed to the end speed at the flag, 60 seconds in.
-    var GAME_SPEED_START = 220;    // px per second
-    var GAME_SPEED_END = 440;
-    var GAME_RUN_S = 60;           // run time at the flag
-    // The most nominal px any landing platform lies ahead of the ball 0.4s before the latest jump for it.
-    // Narrower stages scale the on-screen speed down so that much always fits in front of the ball.
-    var GAME_LOOK_AHEAD = 580;
-    var HIGH_SCORE_KEY = 'ball-drop-high-score';
-    var GAME_BALL_AT = 0.25;       // the ball's place across the stage
-    var GAME_OVERHANG = 60;        // px the drawing area reaches above the stage, for the drop from the line
-    var GAME_GLIDE_MS = 600;       // the carried-over ball moves to its place as it drops
-    var GAME_FADE_MS = 800;
-    var GAME_RESTART_MS = 500;
-    var GAME_FINISH_MS = 2000;
-    var PX_PER_METRE = 10;
-    var SMALL_SCREEN = '(max-width: 800px)';
-    // The ball rises and falls as the page ball does, with Matter's gravity and the ball's air friction.
-    var BASE_MS = 1000 / PX_PER_SECOND;                 // Matter's velocity unit
-    var GAME_GRAVITY = 0.001 * STEP_MS * STEP_MS;       // px per step, added every step
-    var GAME_AIR = 1 - 0.01 * STEP_MS / BASE_MS;
-    var GAME_JUMP = JUMP_SPEED * STEP_MS / BASE_MS;     // px per step
-    var GAME_MAX_STEP = MAX_SPEED * STEP_MS / BASE_MS;
-    // Platforms: the run times, in seconds, at which the ball reaches each end, and the height above
-    // the stage bottom in px. The first platform starts at the stage's left edge. Four phases of
-    // 15 seconds, each with shorter platforms, bigger steps, tighter timing and more double jumps.
-    var COURSE = [
-        [null, 2.50, 60],
-        [2.80, 4.20, 90],
-        [4.68, 5.88, 50],
-        [6.75, 8.15, 70],          // double jump
-        [8.34, 9.54, 130],
-        [10.09, 11.29, 60],
-        [11.99, 13.29, 150],       // double jump
-        [13.84, 15.04, 80],
-        [15.42, 16.62, 80],
-        [16.98, 17.88, 120],
-        [18.50, 19.35, 60],
-        [20.23, 21.13, 130],       // double jump
-        [21.73, 22.58, 80],
-        [23.42, 24.32, 160],       // double jump
-        [24.98, 25.83, 80],
-        [26.77, 27.67, 120],       // double jump
-        [28.25, 29.10, 80],
-        [29.37, 30.17, 140],
-        [30.89, 31.59, 50],
-        [32.42, 33.17, 150],       // double jump
-        [33.85, 34.55, 80],
-        [35.43, 36.18, 160],       // double jump
-        [36.91, 37.61, 60],
-        [38.57, 39.27, 110],       // double jump
-        [39.62, 40.37, 160],
-        [41.10, 41.95, 60],
-        [42.78, 43.73, 160],       // double jump
-        [44.48, 45.08, 50],
-        [45.95, 46.50, 160],       // double jump
-        [47.34, 47.84, 40],
-        [48.67, 49.22, 160],       // double jump
-        [50.01, 50.51, 70],
-        [51.44, 51.99, 160],       // double jump
-        [52.80, 53.30, 60],
-        [54.20, 54.75, 160],       // double jump
-        [55.51, 56.01, 80],
-        [56.96, 57.51, 160],       // double jump
-        [58.19, 60.40, 120]
-    ];
-
     // Collision categories: platforms, walls and the floor keep Matter's default.
     var CAT_BALL = 0x0002;
     var CAT_CHAR = 0x0004;
@@ -132,11 +65,10 @@
     var ACTIVE_CLASS = 'ball-drop-active';
 
     // Platforms are never taken from inside these.
-    var EXCLUDE = '.nav, .mobile-menu, .ball-drop, .drop-ball, .drop-char, .drop-stage, script, style, noscript, hr';
+    var EXCLUDE = '.nav, .mobile-menu, .ball-drop, .drop-ball, .drop-char, script, style, noscript, hr';
     var TAP_IGNORE = 'a, button, input, select, textarea';
     // Links and buttons a touch tap always follows, even while a game is on.
-    var KEEP_CONTROLS = '.nav, .mobile-menu, .drop-exit';
-    var FOOTER_ROWS = '.mobile-name, .footer-links, .footer';
+    var KEEP_CONTROLS = '.nav, .mobile-menu';
     var HIGHLIGHT_NAME = 'drop-broken';
 
     var buttons = document.querySelectorAll('.ball-drop');
@@ -161,7 +93,8 @@
     var edges = [];                // walls and floor
     var passThrough = [];          // platforms the ball started inside
     var floorBody = null;
-    var floorIsLine = false;       // the floor is the footer divider, where the footer game starts
+    var floorIsLine = false;       // the floor is the footer divider, where loose letters collect
+    var collecting = false;        // loose letters fall through the text and images to the footer line
     var built = false;
     var docHeight = 0;
     var floorY = 0;
@@ -183,7 +116,6 @@
     var loose = [];                // loose characters, oldest first
     var broken = false;
     var pendingBreaks = [];
-    var pendingFloor = [];
     var returnTimer = 0;
 
     var keyLeft = false;
@@ -193,9 +125,6 @@
     var orientationOn = false;
     var tap = null;
     var lastTouchEnd = null;
-
-    var reachedFooter = false;
-    var game = null;
 
     // ---------- Platforms ----------
 
@@ -327,6 +256,9 @@
         }
         var body = staticRect((left + right) / 2, (rect.t + rect.b) / 2, right - left, rect.b - rect.t, 1, 'platform');
         body.text = text;
+        if (collecting) {
+            body.collisionFilter.mask = NOT_CHAR;
+        }
         platforms.push(body);
         Composite.add(engine.world, body);
     }
@@ -772,13 +704,6 @@
             var a = pair.bodyA;
             var b = pair.bodyB;
 
-            if (isStart && (a === floorBody || b === floorBody)) {
-                var item = (a === floorBody ? b : a).looseChar;
-                if (item && item.body) {
-                    pendingFloor.push(item);
-                }
-            }
-
             // A loose letter that hits intact text hard enough knocks the letters it lands on loose.
             // Sleeping letters never break anything, and nor do letters that have been removed.
             var letter = a.looseChar || b.looseChar;
@@ -868,17 +793,10 @@
         }
         grounded = false;
         pendingBreaks = [];
-        pendingFloor = [];
         Engine.update(engine, STEP_MS);
 
         pendingBreaks.forEach(applyBreak);
-        pendingFloor.forEach(fadeLoose);
         updateLoose();
-        // Started after the step, so every letter knocked loose in it goes home with the rest.
-        if (reachedFooter) {
-            reachedFooter = false;
-            startFooterGame();
-        }
 
         if (!ball) {
             return;
@@ -959,11 +877,9 @@
         clearTimeout(fadeTimer);
         fadeTimer = 0;
         fading = false;
-        reachedFooter = false;
         endPassThrough();
-        if (!game) {
-            clearActive();
-        }
+        stopCollecting();
+        clearActive();
         if (ball) {
             Composite.remove(engine.world, ball);
             ball = null;
@@ -984,13 +900,41 @@
         startReturn();
     }
 
-    // On the footer line the ball carries on into the footer game; anywhere else it fades.
+    // Every loose letter, and every letter knocked loose after, falls through the text and images
+    // to the footer line. The ball still lands on them.
+    function collectLetters() {
+        if (collecting) {
+            return;
+        }
+        collecting = true;
+        endPassThrough();
+        platforms.forEach(function (platform) {
+            platform.collisionFilter.mask = NOT_CHAR;
+        });
+        loose.forEach(function (item) {
+            if (item.body) {
+                Sleeping.set(item.body, false);
+            }
+        });
+    }
+
+    function stopCollecting() {
+        if (!collecting) {
+            return;
+        }
+        collecting = false;
+        platforms.forEach(function (platform) {
+            platform.collisionFilter.mask = ALL_CATEGORIES;
+        });
+    }
+
+    // On the footer line the ball stays and the loose letters collect there; anywhere else it fades.
     function reachFloor() {
         if (fading) {
             return;
         }
         if (floorIsLine) {
-            reachedFooter = true;
+            collectLetters();
         } else {
             startFade();
         }
@@ -1035,10 +979,6 @@
     }
 
     function jump() {
-        if (game) {
-            gameJump();
-            return;
-        }
         if (!ball || fading || jumpsLeft <= 0) {
             return;
         }
@@ -1057,25 +997,14 @@
     }
 
     function onKeyDown(event) {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp' &&
-                event.key !== 'Escape') {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowUp') {
             return;
         }
         // Leave the browser's Back and Forward shortcuts alone.
         if (event.altKey || event.ctrlKey || event.metaKey) {
             return;
         }
-        if (event.key === 'Escape') {
-            if (game) {
-                endFooterGame(true);
-            }
-            return;
-        }
-        if ((!ball && !game) || isTypingTarget(event.target) || isTypingTarget(document.activeElement)) {
-            return;
-        }
-        // Left and Right do nothing in the footer game.
-        if (game && event.key !== 'ArrowUp') {
+        if (!ball || isTypingTarget(event.target) || isTypingTarget(document.activeElement)) {
             return;
         }
         event.preventDefault();
@@ -1145,7 +1074,7 @@
 
     function onTouchEnd(event) {
         // Remembered for the click that may follow this touch.
-        lastTouchEnd = { time: performance.now(), playing: !!(ball || game) };
+        lastTouchEnd = { time: performance.now(), playing: !!ball };
         var touch = tap && findTouch(event.changedTouches, tap.id);
         if (!touch) {
             return;
@@ -1170,7 +1099,7 @@
     function onClickCapture(event) {
         var recent = lastTouchEnd && performance.now() - lastTouchEnd.time < CLICK_AFTER_TOUCH_MS;
         var fromTouch = event.pointerType === 'touch' || recent;
-        if (!fromTouch || (!ball && !game && !(recent && lastTouchEnd.playing))) {
+        if (!fromTouch || (!ball && !(recent && lastTouchEnd.playing))) {
             return;
         }
         var target = event.target.nodeType === 1 ? event.target : event.target.parentElement;
@@ -1255,379 +1184,12 @@
         }
     }
 
-    // ---------- Footer game ----------
-
-    function px(value) {
-        return value + 'px';
-    }
-
-    function makeEl(tag, className, parent, text) {
-        var el = document.createElement(tag);
-        el.className = className;
-        if (text) {
-            el.textContent = text;
-        }
-        if (parent) {
-            parent.appendChild(el);
-        }
-        return el;
-    }
-
-    // Nominal px along the course at a run time, in seconds.
-    function courseAt(t) {
-        return GAME_SPEED_START * t + (GAME_SPEED_END - GAME_SPEED_START) * t * t / (2 * GAME_RUN_S);
-    }
-
-    // ---------- High score ----------
-
-    var highScore = 0;
-
-    function readHighScore() {
-        try {
-            var stored = parseInt(window.localStorage.getItem(HIGH_SCORE_KEY), 10);
-            if (stored > highScore) {
-                highScore = stored;
-            }
-        } catch (e) {}
-        return highScore;
-    }
-
-    function saveHighScore() {
-        try {
-            window.localStorage.setItem(HIGH_SCORE_KEY, String(highScore));
-        } catch (e) {}
-    }
-
-    // The column rises into view the first time; after that only a new value does.
-    function showHighScore(g) {
-        var value = makeEl('span', 'label-text opac-5', null, highScore + ' m');
-        if (g.bestValueEl) {
-            value.classList.add('drop-rise');
-            g.bestEl.replaceChild(value, g.bestValueEl);
-        } else {
-            g.bestEl.appendChild(value);
-            g.bestEl.classList.add('is-shown');
-        }
-        g.bestValueEl = value;
-    }
-
-    // A run has ended, by a fall, at the flag or by leaving the game.
-    function endRun(g) {
-        if (g.recorded) {
-            return;
-        }
-        g.recorded = true;
-        if (g.metres > readHighScore()) {
-            highScore = g.metres;
-            saveHighScore();
-            showHighScore(g);
-        }
-    }
-
-    // ---------- Course ----------
-
-    // The platform under the ball's place on the course, at the given height.
-    function platformAt(at, y) {
-        for (var i = 0; i < game.platforms.length; i++) {
-            var p = game.platforms[i];
-            if (at >= p.left && at <= p.right && Math.abs(p.y - y) < 0.5) {
-                return p;
-            }
-        }
-        return null;
-    }
-
-    // Platforms are one way: the ball lands on the first one it crosses going down.
-    function landing(at, from, to) {
-        var found = null;
-        game.platforms.forEach(function (p) {
-            if (at >= p.left && at <= p.right && from <= p.y && to >= p.y && (!found || p.y < found.y)) {
-                found = p;
-            }
-        });
-        return found;
-    }
-
-    function startRun(x, y) {
-        var g = game;
-        g.phase = 'drop';          // the platforms wait until the ball lands
-        g.time = 0;                // seconds alive in this run
-        g.travel = 0;
-        g.metres = 0;
-        g.recorded = false;
-        g.x = x;
-        g.y = y;
-        g.step = 0;
-        g.grounded = false;
-        g.jumpsLeft = JUMPS;
-    }
-
-    function gameStep() {
-        var g = game;
-        if (g.phase === 'run') {
-            g.time = Math.min(g.time + STEP_MS / 1000, GAME_RUN_S);
-            g.travel = courseAt(g.time);
-            g.metres = Math.floor(g.travel / PX_PER_METRE);
-            if (g.time >= GAME_RUN_S) {
-                finishRun();
-            }
-        }
-        if (g.glide < GAME_GLIDE_MS) {
-            g.glide = Math.min(g.glide + STEP_MS, GAME_GLIDE_MS);
-            var t = g.glide / GAME_GLIDE_MS;
-            g.x = g.ballX + (g.fromX - g.ballX) * (1 - t * t * (3 - 2 * t));
-        }
-        var at = g.travel + (g.x - g.ballX) / g.scale;
-        if (g.grounded && !platformAt(at, g.y + RADIUS)) {
-            g.grounded = false;
-        }
-        if (!g.grounded) {
-            g.step = clamp(g.step * GAME_AIR + GAME_GRAVITY, -GAME_MAX_STEP, GAME_MAX_STEP);
-            var from = g.y + RADIUS;
-            g.y += g.step;
-            var p = g.step > 0 ? landing(at, from, g.y + RADIUS) : null;
-            if (p) {
-                g.y = p.y - RADIUS;
-                g.step = 0;
-                g.grounded = true;
-                g.jumpsLeft = JUMPS;
-                if (g.phase === 'drop') {
-                    g.phase = 'run';
-                }
-            }
-        }
-        // Fallen out of the stage: a short pause, then the run starts again.
-        if (g.y - RADIUS > g.height && g.phase !== 'finished') {
-            g.phase = 'pause';
-            endRun(g);
-            g.timers.push(setTimeout(function () {
-                startRun(g.ballX, g.lineY - RADIUS);
-            }, GAME_RESTART_MS));
-        }
-    }
-
-    function gameRender() {
-        var g = game;
-        g.ballEl.style.transform = 'translate(' + (g.x - RADIUS) + 'px, ' + (g.y - RADIUS + GAME_OVERHANG) + 'px)';
-        g.platforms.forEach(function (p) {
-            p.el.style.transform = 'translate(' + (g.ballX + (p.left - g.travel) * g.scale) + 'px, ' + (p.y + GAME_OVERHANG) + 'px)';
-        });
-        if (g.metres !== g.shownMetres) {
-            g.shownMetres = g.metres;
-            g.distanceEl.textContent = g.metres + ' m';
-        }
-    }
-
-    function gameFrame(now) {
-        var g = game;
-        if (!g) {
-            return;
-        }
-        g.rafId = 0;
-        g.accumulator += clamp(now - g.lastTime, 0, MAX_FRAME_MS);
-        g.lastTime = now;
-        while (g.accumulator >= STEP_MS) {
-            g.accumulator -= STEP_MS;
-            if (g.phase !== 'pause' && g.phase !== 'ending') {
-                gameStep();
-            }
-        }
-        if (game === g && g.phase !== 'ending') {
-            gameRender();
-            g.rafId = requestAnimationFrame(gameFrame);
-        }
-    }
-
-    function gameJump() {
-        var g = game;
-        if (g.phase !== 'run' || g.jumpsLeft <= 0) {
-            return;
-        }
-        g.jumpsLeft -= 1;
-        g.grounded = false;
-        g.step = -GAME_JUMP;
-        if (!g.jumped) {
-            g.jumped = true;
-            g.hintEl.classList.add('is-gone');
-        }
-    }
-
-    function finishRun() {
-        var g = game;
-        g.phase = 'finished';
-        g.hintEl.textContent = 'Finished';
-        g.hintEl.classList.remove('opac-5', 'is-gone');
-        endRun(g);
-        g.timers.push(setTimeout(function () {
-            endFooterGame(false);
-        }, GAME_FINISH_MS));
-    }
-
-    // The page game ends where the ball meets the footer line, and the footer gives way to a stage.
-    function startFooterGame() {
-        if (!ball || game) {
-            return;
-        }
-        var fromX = ball.position.x;
-        var fromY = ball.position.y;
-        startReturn();
-        endPassThrough();
-        Composite.remove(engine.world, ball);
-        ball = null;
-        releaseKeys();
-        var el = ballEl;
-        ballEl = null;
-
-        var stage = makeEl('div', 'drop-stage');
-        var track = makeEl('div', 'drop-track', stage);
-        track.setAttribute('aria-hidden', 'true');
-        var hud = makeEl('div', 'drop-hud', stage);
-        var distanceCol = makeEl('div', 'drop-score', hud);
-        makeEl('span', 'f-label', distanceCol, 'Distance');
-        var distanceEl = makeEl('span', 'label-text opac-5', distanceCol, '0 m');
-        var bestEl = makeEl('div', 'drop-score drop-best', hud);
-        makeEl('span', 'f-label', bestEl, 'High score');
-        var small = window.matchMedia && window.matchMedia(SMALL_SCREEN).matches;
-        var hintEl = makeEl('span', 'label-text opac-5 drop-hint', stage, small ? 'Tap to jump' : 'Up arrow to jump');
-        var exitEl = makeEl('button', 'label-text opac-5 drop-exit', stage, 'Exit');
-        exitEl.type = 'button';
-        exitEl.addEventListener('click', function () {
-            endFooterGame(true);
-        });
-
-        // The stage sits directly under the line; the footer rows are held where they were while they fade.
-        var row = footerLine.closest('.row') || footerLine.parentNode;
-        var before = row.getBoundingClientRect().height;
-        stage.style.marginTop = px(-parseFloat(getComputedStyle(footerLine).marginBottom));
-        footerLine.parentNode.insertBefore(stage, footerLine.nextSibling);
-        var shift = row.getBoundingClientRect().height - before;
-        var rows = Array.prototype.map.call(document.querySelectorAll(FOOTER_ROWS), function (rowEl) {
-            var saved = { el: rowEl, style: rowEl.getAttribute('style') };
-            // Set as an attribute, not through el.style, so removing it later leaves no trace.
-            rowEl.setAttribute('style', (saved.style ? saved.style + ' ' : '') + 'top: ' + px(-shift) + ';');
-            rowEl.classList.add('drop-footer-fade');
-            return saved;
-        });
-
-        var rect = stage.getBoundingClientRect();
-        var width = stage.clientWidth;
-        var height = stage.clientHeight;
-        var ballX = Math.round(width * GAME_BALL_AT);
-        // On-screen px per nominal px.
-        var scale = Math.min(1, (width - ballX) / GAME_LOOK_AHEAD);
-        var platforms = COURSE.map(function (c) {
-            var left = c[0] === null ? -ballX / scale : courseAt(c[0]);
-            var right = courseAt(c[1]);
-            var platformEl = makeEl('div', 'drop-platform', track);
-            platformEl.style.width = px((right - left) * scale);
-            return { left: left, right: right, y: height - c[2], el: platformEl };
-        });
-        var last = platforms[platforms.length - 1];
-        makeEl('div', 'drop-flag', last.el).style.left = px((courseAt(GAME_RUN_S) - last.left) * scale);
-        el.classList.remove('is-fading');
-        track.appendChild(el);
-
-        game = {
-            stage: stage, track: track, rows: rows, shift: shift, ballEl: el, distanceEl: distanceEl, hintEl: hintEl,
-            bestEl: bestEl, bestValueEl: null,
-            platforms: platforms, width: width, height: height, ballX: ballX, scale: scale,
-            lineY: -footerLine.getBoundingClientRect().height,
-            fromX: fromX - (rect.left + window.scrollX), glide: 0,
-            jumped: false, shownMetres: 0, timers: [], rafId: 0, accumulator: 0, lastTime: performance.now()
-        };
-        startRun(game.fromX, fromY - (rect.top + window.scrollY));
-        if (readHighScore() > 0) {
-            showHighScore(game);
-        }
-
-        // Commit the starting styles, then fade the footer out and the stage in.
-        stage.getBoundingClientRect();
-        stage.classList.add('is-shown');
-        rows.forEach(function (saved) {
-            saved.el.classList.add('drop-footer-out');
-        });
-        game.timers.push(setTimeout(function () {
-            rows.forEach(function (saved) {
-                saved.el.classList.add('drop-footer-gone');
-            });
-        }, GAME_FADE_MS));
-
-        // Bring the whole stage into view, below the sticky nav.
-        var top = rect.top + window.scrollY;
-        var bottom = top + height;
-        var navBottom = nav.getBoundingClientRect().bottom;
-        var target = null;
-        if (bottom > window.scrollY + window.innerHeight) {
-            target = bottom - window.innerHeight;
-        }
-        if (top < (target === null ? window.scrollY : target) + navBottom) {
-            target = top - navBottom;
-        }
-        if (target !== null) {
-            window.scrollTo({ top: target, behavior: 'smooth' });
-        }
-
-        gameRender();
-        game.rafId = requestAnimationFrame(gameFrame);
-    }
-
-    // At the flag the stage fades out and the footer fades back in; every other way out is immediate.
-    function endFooterGame(immediate) {
-        var g = game;
-        if (!g) {
-            return;
-        }
-        g.timers.forEach(clearTimeout);
-        g.timers = [];
-        endRun(g);
-        if (!immediate) {
-            if (g.phase === 'ending') {
-                return;
-            }
-            g.phase = 'ending';
-            inkGameOff();
-            g.stage.classList.remove('is-shown');
-            g.ballEl.classList.add('is-fading');
-            g.rows.forEach(function (saved) {
-                saved.el.classList.remove('drop-footer-gone');
-            });
-            g.stage.getBoundingClientRect();
-            g.rows.forEach(function (saved) {
-                saved.el.classList.remove('drop-footer-out');
-            });
-            // The page is about to get shorter: scroll up first so nothing jumps when the stage goes.
-            var maxScroll = document.documentElement.scrollHeight - g.shift - window.innerHeight;
-            if (window.scrollY > maxScroll) {
-                window.scrollTo({ top: Math.max(0, maxScroll), behavior: 'smooth' });
-            }
-            g.timers.push(setTimeout(function () {
-                endFooterGame(true);
-            }, GAME_FADE_MS));
-            return;
-        }
-        game = null;
-        cancelAnimationFrame(g.rafId);
-        g.stage.parentNode.removeChild(g.stage);
-        g.rows.forEach(function (saved) {
-            saved.el.classList.remove('drop-footer-fade', 'drop-footer-out', 'drop-footer-gone');
-            if (saved.style === null) {
-                saved.el.removeAttribute('style');
-            } else {
-                saved.el.setAttribute('style', saved.style);
-            }
-        });
-        if (!ball) {
-            clearActive();
-        }
-    }
-
     // ---------- Setup ----------
 
     // The dot is an on/off switch: it drops a ball, or ends the game that is on.
     function onPress(event) {
         startListening();
-        if (ball || game) {
-            endFooterGame(true);
+        if (ball) {
             restoreText();
             removeBall();
         } else {
@@ -1924,12 +1486,11 @@
     }
 
     // Phones fire height-only resizes when the address bar hides; ignore those.
-    // A width change restores the text and the footer at once and removes the ball.
+    // A width change restores the text at once and removes the ball.
     window.addEventListener('resize', function () {
         if (window.innerWidth !== lastWidth) {
             lastWidth = window.innerWidth;
             restoreText();
-            endFooterGame(true);
             removeBall();
             buildWorld();
         }
